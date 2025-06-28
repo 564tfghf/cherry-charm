@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { toast } from 'react-toastify';
+import useGame from '../stores/store';
 
 const SLOT_MACHINE_ABI = [
   {"inputs":[],"name":"fundContract","outputs":[],"stateMutability":"payable","type":"function"},
@@ -64,14 +65,6 @@ export const MONAD_TESTNET = {
   testnet: true,
 };
 
-// Fruit emoji mapping
-const FRUIT_EMOJIS: { [key: string]: string } = {
-  'cherry': '🍒',
-  'apple': '🍎',
-  'banana': '🍌',
-  'lemon': '🍋'
-};
-
 // Retry utility function
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
@@ -95,6 +88,7 @@ const retryWithBackoff = async <T>(
 export function useBlockchainGame() {
   const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
+  const { setOutcomePopup } = useGame();
 
   // Only use the Privy embedded wallet
   const privyWallet = wallets.find(w => w.walletClientType === 'privy');
@@ -250,52 +244,15 @@ export function useBlockchainGame() {
   // Show detailed spin result popup
   const showSpinResultPopup = (combination: string, monReward: bigint, extraSpins: bigint, nftMinted: boolean, txHash: string) => {
     const fruits = combination.split('|');
-    const fruitEmojis = fruits.map(fruit => FRUIT_EMOJIS[fruit] || fruit).join(' ');
     const rewardAmount = ethers.formatEther(monReward);
-    const explorerUrl = `${MONAD_TESTNET.blockExplorers.default.url}/tx/${txHash}`;
     
-    // Create custom toast with detailed info
-    const toastContent = (
-      <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-          🎰 Spin Result: {fruitEmojis}
-        </div>
-        {nftMinted && (
-          <div style={{ color: '#ff6b35', fontWeight: 'bold' }}>
-            🎉 LEGENDARY NFT WON! 🍒🍒🍒
-          </div>
-        )}
-        {monReward > 0 && (
-          <div style={{ color: '#28a745', fontWeight: 'bold' }}>
-            💰 Won: {rewardAmount} MON
-          </div>
-        )}
-        {extraSpins > 0 && (
-          <div style={{ color: '#007bff', fontWeight: 'bold' }}>
-            🎁 Won: {extraSpins} Free Spins
-          </div>
-        )}
-        {monReward === 0n && extraSpins === 0n && !nftMinted && (
-          <div style={{ color: '#6c757d' }}>
-            😔 No reward this time
-          </div>
-        )}
-        <div style={{ marginTop: '8px', fontSize: '12px' }}>
-          <a 
-            href={explorerUrl} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={{ color: '#007bff', textDecoration: 'underline' }}
-          >
-            🔗 View on Monad Explorer
-          </a>
-        </div>
-      </div>
-    );
-    
-    toast.success(toastContent, {
-      autoClose: 8000,
-      hideProgressBar: false,
+    // Set the outcome popup data
+    setOutcomePopup({
+      combination: fruits,
+      monReward: rewardAmount,
+      extraSpins: Number(extraSpins),
+      nftMinted,
+      txHash
     });
   };
 
@@ -394,7 +351,7 @@ export function useBlockchainGame() {
     } finally {
       setIsSpinning(false);
     }
-  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
+  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState, setOutcomePopup]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';

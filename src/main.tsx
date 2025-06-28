@@ -30,21 +30,31 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       config={{
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
-          noPromptOnSignature: true,
+          noPromptOnSignature: true, // ✅ This prevents transaction approval prompts
+          priceDisplay: {
+            primary: 'native-token',
+            secondary: 'fiat-currency',
+          },
         },
         loginMethods: ['email', 'google', 'twitter'],
         appearance: {
           theme: 'light',
           accentColor: '#3b0873',
+          logo: './images/logo.png',
         },
         supportedChains: [MONAD_TESTNET],
         defaultChain: MONAD_TESTNET,
+        // ✅ Additional session configuration for seamless transactions
+        session: {
+          sameSite: 'lax',
+          secure: true,
+        },
       }}
     >
       <App />
       <ToastContainer
         position="top-right"
-        autoClose={3000}
+        autoClose={3000,
         hideProgressBar={false}
         newestOnTop={false}
         closeOnClick

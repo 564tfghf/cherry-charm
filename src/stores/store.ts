@@ -19,6 +19,14 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import devLog from '../utils/functions/devLog';
 import { Fruit } from '../utils/enums';
 
+interface OutcomeData {
+  combination: string[];
+  monReward: string;
+  extraSpins: number;
+  nftMinted: boolean;
+  txHash: string;
+}
+
 type State = {
   // Endpoint
   // valuesUrl: string;
@@ -26,6 +34,10 @@ type State = {
   // Modal
   modal: boolean;
   setModal: (isOpen: boolean) => void;
+
+  // Outcome Popup
+  outcomePopup: OutcomeData | null;
+  setOutcomePopup: (data: OutcomeData | null) => void;
 
   // Coins
   coins: number;
@@ -93,6 +105,19 @@ const useGame = create<State>()(
     },
 
     /**
+     * Outcome Popup
+     * (spin result popup)
+     */
+    outcomePopup: null,
+    setOutcomePopup: (data: OutcomeData | null) => {
+      set(() => {
+        return {
+          outcomePopup: data,
+        };
+      });
+    },
+
+    /**
      * Coins
      *
      */
@@ -140,6 +165,7 @@ const useGame = create<State>()(
      */
     // receivedSegments: [-1, -1, -1],
     // setReceivedSegments: (segments: number[]) => {
+    //   segments: number[]) => {
     //   set(() => {
     //     return {
     //       receivedSegments: segments,
