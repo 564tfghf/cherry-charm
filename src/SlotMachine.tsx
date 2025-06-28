@@ -56,8 +56,6 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const end = useGame((state) => state.end);
   const addSpin = useGame((state) => state.addSpin);
   const updateCoins = useGame((state) => state.updateCoins);
-  const setOutcomePopup = useGame((state) => state.setOutcomePopup);
-  const outcomePopup = useGame((state) => state.outcomePopup);
 
   // Blockchain integration
   const { 
@@ -72,105 +70,60 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     useRef<ReelGroup>(null),
   ];
 
-  // ✅ SIMPLIFIED STATE MANAGEMENT
-  const [gameState, setGameState] = useState<'idle' | 'spinning' | 'waiting-for-popup'>('idle');
-  const [pendingBlockchainResult, setPendingBlockchainResult] = useState<any>(null);
-  const [stoppedReels, setStoppedReels] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [blockchainResult, setBlockchainResult] = useState<any>(null);
 
-  // ✅ Handle phase changes for local coins only
+  // Handle phase changes for local coins only
   useEffect(() => {
     devLog('PHASE: ' + phase);
-    if (phase === 'idle' && gameState === 'idle' && !pendingBlockchainResult) {
-      // Only update local coins if no blockchain result
+    if (phase === 'idle' && !authenticated) {
+      // Only update local coins if not authenticated
       updateCoins(endgame(fruit0, fruit1, fruit2));
     }
-  }, [phase, gameState, pendingBlockchainResult]);
+  }, [phase, authenticated]);
 
-  // ✅ MAIN SPIN FUNCTION - Wait for blockchain OR timeout
+  // Main spin function - blockchain or local
   const spinSlotMachine = async () => {
-    if (!authenticated) {
-      devLog('❌ Not authenticated');
-      return;
-    }
-
-    if (gameState !== 'idle') {
-      console.log('❌ Cannot spin: Game state is', gameState);
-      return;
-    }
-
-    console.log('🚀 STARTING NEW SPIN');
+    if (isSpinning) return;
     
-    // ✅ 1. LOCK EVERYTHING
-    setGameState('spinning');
-    setPendingBlockchainResult(null);
-    
-    // ✅ 2. START UI IMMEDIATELY
+    setIsSpinning(true);
     start();
-    setStoppedReels(0);
     addSpin();
 
-    // ✅ 3. CLEAR PREVIOUS FRUITS
+    // Clear previous fruits
     setFruit0('');
     setFruit1('');
     setFruit2('');
 
-    // ✅ 4. START BLOCKCHAIN SPIN WITH TIMEOUT
-    let blockchainResult: any = null;
-    let blockchainCompleted = false;
-
-    // Start blockchain spin
-    const blockchainPromise = blockchainSpin().then((result) => {
-      blockchainCompleted = true;
-      if (result) {
-        console.log('🎯 BLOCKCHAIN RESULT READY:', result);
-        blockchainResult = result;
-        setPendingBlockchainResult(result);
+    if (authenticated) {
+      // Blockchain spin
+      console.log('🚀 Starting blockchain spin');
+      try {
+        const result = await blockchainSpin();
+        if (result) {
+          setBlockchainResult(result);
+          console.log('🎯 Blockchain result received:', result);
+        }
+      } catch (error) {
+        console.error('❌ Blockchain spin failed:', error);
       }
-      return result;
-    }).catch((error) => {
-      blockchainCompleted = true;
-      console.error('❌ Blockchain error:', error);
-      return null;
-    });
+    }
 
-    // ✅ 5. CONFIGURE REEL ANIMATION - LONGER SPIN TIME
-    const minSpinTime = 8000; // 8 seconds minimum
-    const maxSpinTime = 12000; // 12 seconds maximum
-    const spinDuration = Math.random() * (maxSpinTime - minSpinTime) + minSpinTime;
-    
-    console.log(`🎰 Reels will spin for ${spinDuration/1000} seconds`);
-
-    // Start reel animations with longer duration
+    // Start reel animations
     for (let i = 0; i < 3; i++) {
       const reel = reelRefs[i].current;
       if (reel) {
         reel.rotation.x = 0;
         reel.reelSegment = 0;
-        // Calculate segments needed for the spin duration
-        const segmentsToSpin = Math.floor(spinDuration / 100); // ~10 segments per second
-        reel.reelSpinUntil = segmentsToSpin + (i * 5); // Stagger reel stops
+        reel.reelSpinUntil = Math.floor(Math.random() * 20) + 20 + (i * 5);
         reel.reelStopSegment = 0;
       }
     }
-
-    // ✅ 6. WAIT FOR BLOCKCHAIN OR TIMEOUT
-    setTimeout(async () => {
-      if (!blockchainCompleted) {
-        console.log('⏰ Blockchain taking too long, waiting a bit more...');
-        // Wait another 5 seconds
-        setTimeout(async () => {
-          if (!blockchainCompleted) {
-            console.log('⏰ Blockchain timeout - using random results');
-          }
-          // Blockchain result will be handled by the pending state
-        }, 5000);
-      }
-    }, spinDuration);
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'Space' && gameState === 'idle' && authenticated) {
+      if (event.code === 'Space' && !isSpinning) {
         event.preventDefault();
         spinSlotMachine();
       }
@@ -178,11 +131,13 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, authenticated]);
+  }, [isSpinning]);
 
-  // ✅ REEL ANIMATION - Use blockchain result when available
+  // Reel animation
   useFrame(() => {
-    if (gameState !== 'spinning') return;
+    if (!isSpinning) return;
+
+    let allReelsStopped = true;
 
     for (let i = 0; i < reelRefs.length; i++) {
       const reel = reelRefs[i].current;
@@ -192,23 +147,24 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
 
       const targetRotationX =
         (reel.reelSpinUntil - reel.reelSegment) * WHEEL_SEGMENT;
-      const rotationSpeed = 0.08; // Slightly slower for longer spins
+      const rotationSpeed = 0.1;
 
       if (reel.rotation.x < targetRotationX) {
         reel.rotation.x += rotationSpeed;
         reel.reelSegment = Math.floor(reel.rotation.x / WHEEL_SEGMENT);
+        allReelsStopped = false;
       } else {
-        // ✅ REEL STOPPED - Determine fruit to show
+        // Reel stopped - determine fruit to show
         let fruit;
         
-        if (pendingBlockchainResult && pendingBlockchainResult.combination) {
-          // ✅ USE BLOCKCHAIN RESULT
-          fruit = pendingBlockchainResult.combination[i]?.toUpperCase();
-          console.log(`🎯 Reel ${i + 1} using BLOCKCHAIN result: ${fruit}`);
+        if (authenticated && blockchainResult && blockchainResult.combination) {
+          // Use blockchain result
+          fruit = blockchainResult.combination[i]?.toUpperCase();
+          console.log(`🎯 Reel ${i + 1} using blockchain result: ${fruit}`);
         } else {
-          // ✅ USE RANDOM RESULT (fallback)
+          // Use random result (local game)
           fruit = segmentToFruit(i, reel.reelSegment);
-          console.log(`🎲 Reel ${i + 1} using RANDOM result: ${fruit}`);
+          console.log(`🎲 Reel ${i + 1} using random result: ${fruit}`);
         }
         
         if (fruit) {
@@ -220,54 +176,16 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
         devLog(`Reel ${i + 1} stopped at segment ${reel.reelSegment} ${fruit}`);
 
         reel.reelSpinUntil = undefined;
-
-        setStoppedReels((prev) => {
-          const newStopped = prev + 1;
-          if (newStopped === 3) {
-            console.log('🎰 ALL REELS STOPPED');
-            
-            // ✅ END SPINNING PHASE
-            setTimeout(() => {
-              end();
-              
-              // ✅ ALWAYS SHOW POPUP IF WE HAVE BLOCKCHAIN RESULT
-              if (pendingBlockchainResult) {
-                console.log('🎯 SHOWING POPUP WITH BLOCKCHAIN RESULT');
-                setGameState('waiting-for-popup');
-                setTimeout(() => {
-                  setOutcomePopup(pendingBlockchainResult);
-                }, 1000);
-              } else {
-                console.log('🎲 NO BLOCKCHAIN RESULT - BACK TO IDLE');
-                setGameState('idle');
-              }
-            }, 500);
-          }
-          return newStopped;
-        });
       }
     }
+
+    if (allReelsStopped) {
+      console.log('🎰 All reels stopped');
+      setIsSpinning(false);
+      setBlockchainResult(null);
+      end();
+    }
   });
-
-  // ✅ HANDLE POPUP DISMISSAL
-  useEffect(() => {
-    if (gameState === 'waiting-for-popup' && !outcomePopup) {
-      console.log('🎰 POPUP DISMISSED - BACK TO IDLE');
-      setGameState('idle');
-      setPendingBlockchainResult(null);
-    }
-  }, [gameState, outcomePopup]);
-
-  // ✅ HANDLE LATE BLOCKCHAIN RESULTS
-  useEffect(() => {
-    if (pendingBlockchainResult && gameState === 'idle' && phase === 'idle') {
-      console.log('🎯 LATE BLOCKCHAIN RESULT - SHOWING POPUP NOW');
-      setGameState('waiting-for-popup');
-      setTimeout(() => {
-        setOutcomePopup(pendingBlockchainResult);
-      }, 500);
-    }
-  }, [pendingBlockchainResult, gameState, phase]);
 
   useImperativeHandle(ref, () => ({
     reelRefs,
@@ -278,23 +196,13 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const [textZ, setTextZ] = useState(1.6);
   const [textY, setTextY] = useState(-14);
 
-  // ✅ Can only spin when idle
-  const canSpin = authenticated && gameState === 'idle';
-
-  // ✅ Button text based on game state
   const getButtonText = () => {
     if (!authenticated) return 'CONNECT WALLET';
-    
-    switch (gameState) {
-      case 'spinning':
-        return 'SPINNING...';
-      case 'waiting-for-popup':
-        return 'CLOSE POPUP TO CONTINUE';
-      case 'idle':
-      default:
-        return `SPIN (${getSpinCost()})`;
-    }
+    if (isSpinning) return 'SPINNING...';
+    return `SPIN (${getSpinCost()})`;
   };
+
+  const canSpin = authenticated ? !isSpinning : !isSpinning;
 
   return (
     <>

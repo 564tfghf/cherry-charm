@@ -18,13 +18,11 @@ import useGame from '../stores/store';
 import { useBlockchainGame } from '../hooks/useBlockchainGame';
 import Modal from './modal/Modal';
 import HelpButton from './helpButton/HelpButton';
-import OutcomePopup from './outcomePopup/OutcomePopup';
 import WalletWidget from '../components/WalletWidget';
 import './style.css';
 
 const Interface = () => {
   const modal = useGame((state) => state.modal);
-  const outcomePopup = useGame((state) => state.outcomePopup);
   const coins = useGame((state) => state.coins);
   const spins = useGame((state) => state.spins);
   
@@ -41,17 +39,6 @@ const Interface = () => {
 
       {/* Modal */}
       {modal && <Modal />}
-
-      {/* Outcome Popup */}
-      {outcomePopup && (
-        <OutcomePopup
-          combination={outcomePopup.combination}
-          monReward={outcomePopup.monReward}
-          extraSpins={outcomePopup.extraSpins}
-          nftMinted={outcomePopup.nftMinted}
-          txHash={outcomePopup.txHash}
-        />
-      )}
 
       {/* Logo */}
       <a

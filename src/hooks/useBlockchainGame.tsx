@@ -84,26 +84,6 @@ export function useBlockchainGame() {
   const [rewardPool, setRewardPool] = useState<string>('0');
   const [networkError, setNetworkError] = useState<boolean>(false);
 
-  // ✅ FIXED: Much higher gas settings for Monad testnet
-  const getDynamicGasSettings = useCallback(async (provider: ethers.BrowserProvider) => {
-    try {
-      // ✅ Use EXTREMELY high static values for Monad testnet
-      return {
-        gasLimit: 1000000, // Very high gas limit
-        maxFeePerGas: ethers.parseUnits('1000', 'gwei'), // EXTREMELY high for testnet
-        maxPriorityFeePerGas: ethers.parseUnits('500', 'gwei') // EXTREMELY high priority
-      };
-    } catch (error) {
-      console.warn('⚠️ Failed to get gas settings, using ultra-high fallback:', error);
-      
-      return {
-        gasLimit: 1000000,
-        maxFeePerGas: ethers.parseUnits('2000', 'gwei'), // Even higher fallback
-        maxPriorityFeePerGas: ethers.parseUnits('1000', 'gwei')
-      };
-    }
-  }, []);
-
   // Initialize provider, signer, and contract when Privy wallet is ready
   useEffect(() => {
     async function setup() {
@@ -220,7 +200,7 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // ✅ ENHANCED: Blockchain spin function with better error handling and logging
+  // Blockchain spin function with proper event handling
   const spin = useCallback(async () => {
     if (!contract || !signer || !provider) {
       console.error('Contract not ready');
@@ -244,29 +224,15 @@ export function useBlockchainGame() {
       console.log(`🎰 Starting blockchain spin with cost: ${ethers.formatEther(cost)} MON`);
       console.log(`📊 Current state - Free: ${freeSpins}, Discounted: ${discountedSpins}, HasDiscount: ${hasDiscount}`);
       
-      // ✅ Get ultra-high gas settings
-      const gasSettings = await getDynamicGasSettings(provider);
-      
-      const txParams = {
-        value: cost,
-        ...gasSettings
-      };
-      
-      console.log('📊 Using ultra-high gas settings:', {
-        gasLimit: txParams.gasLimit.toString(),
-        maxFeePerGas: ethers.formatUnits(txParams.maxFeePerGas, 'gwei') + ' gwei',
-        maxPriorityFeePerGas: ethers.formatUnits(txParams.maxPriorityFeePerGas, 'gwei') + ' gwei'
-      });
-      
-      // Send transaction
-      const tx = await contract.spin(txParams);
+      // Call spin
+      const tx = await contract.spin({ value: cost });
       console.log('📤 Transaction sent:', tx.hash);
       
       // Wait for confirmation
       const receipt = await tx.wait();
       console.log('✅ Transaction confirmed:', receipt.hash);
       
-      // ✅ ENHANCED: Better event parsing with detailed logging
+      // Parse SpinResult event
       console.log('🔍 Parsing transaction logs...');
       console.log('📋 Total logs found:', receipt.logs.length);
       
@@ -306,7 +272,7 @@ export function useBlockchainGame() {
           txHash: receipt.hash
         };
         
-        console.log('🎯 DETAILED Blockchain result:', {
+        console.log('🎯 Blockchain result:', {
           combination: fruits.join(' | '),
           monReward: rewardAmount + ' MON',
           extraSpins: Number(extraSpins),
@@ -316,17 +282,17 @@ export function useBlockchainGame() {
           txHash: receipt.hash
         });
         
-        // ✅ INVESTIGATE: Log reward pool status
-        try {
-          const currentRewardPool = await contract.getRewardPool();
-          console.log('💰 Current reward pool:', ethers.formatEther(currentRewardPool), 'MON');
-          
-          if (parseFloat(ethers.formatEther(currentRewardPool)) < 0.1) {
-            console.log('⚠️ WARNING: Reward pool is very low! This might explain no rewards.');
-            toast.warning('⚠️ Reward pool is low - rewards may be limited');
-          }
-        } catch (poolError) {
-          console.error('❌ Could not check reward pool:', poolError);
+        // Show appropriate toast notifications
+        if (nftMinted) {
+          toast.success('🎉 LEGENDARY NFT WON! 🍒🍒🍒');
+        } else if (parseFloat(rewardAmount) > 0) {
+          toast.success(`💰 Won ${rewardAmount} MON!`);
+        } else if (Number(extraSpins) > 0) {
+          toast.success(`🎁 Won ${extraSpins} Free Spins!`);
+        } else if (newDiscountGranted) {
+          toast.success('🎫 Won 90% Discount on Next 10 Spins!');
+        } else {
+          toast.info('😔 No reward this time - try again!');
         }
         
         // Refresh state in background
@@ -358,7 +324,7 @@ export function useBlockchainGame() {
       
       return null;
     }
-  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, networkError, fetchState, getDynamicGasSettings]);
+  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, networkError, fetchState]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
