@@ -49,12 +49,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^1.88.4",
+    "@privy-io/wagmi": "^0.2.12",
     "@react-three/drei": "^9.77.4",
     "@react-three/fiber": "^8.13.4",
+    "ethers": "^6.14.4",
     "r3f-perf": "^7.1.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-toastify": "^10.0.5",
     "three": "^0.153.0",
+    "viem": "^2.21.45",
+    "wagmi": "^2.12.17",
     "zustand": "^4.3.8"
   },
   "devDependencies": {
