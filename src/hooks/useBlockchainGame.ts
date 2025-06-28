@@ -60,6 +60,14 @@ const MONAD_TESTNET = {
   },
 };
 
+// Fruit emoji mapping
+const FRUIT_EMOJIS: { [key: string]: string } = {
+  'cherry': '🍒',
+  'apple': '🍎',
+  'banana': '🍌',
+  'lemon': '🍋'
+};
+
 export function useBlockchainGame() {
   const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -87,7 +95,32 @@ export function useBlockchainGame() {
         try {
           console.log('Setting up Privy wallet...');
           const ethProvider = await privyWallet.getEthereumProvider();
+          
+          // Configure provider for Monad Testnet
           const ethersProvider = new ethers.BrowserProvider(ethProvider);
+          
+          // Switch to Monad Testnet if needed
+          try {
+            await ethProvider.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: `0x${MONAD_TESTNET.id.toString(16)}` }],
+            });
+          } catch (switchError: any) {
+            // If the chain doesn't exist, add it
+            if (switchError.code === 4902) {
+              await ethProvider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: `0x${MONAD_TESTNET.id.toString(16)}`,
+                  chainName: MONAD_TESTNET.name,
+                  nativeCurrency: MONAD_TESTNET.nativeCurrency,
+                  rpcUrls: MONAD_TESTNET.rpcUrls.default.http,
+                  blockExplorerUrls: [MONAD_TESTNET.blockExplorers.default.url],
+                }],
+              });
+            }
+          }
+          
           setProvider(ethersProvider);
           
           const ethersSigner = await ethersProvider.getSigner();
@@ -102,44 +135,140 @@ export function useBlockchainGame() {
           console.log('Contract initialized');
         } catch (error) {
           console.error('Error setting up wallet:', error);
-          toast.error('Failed to connect wallet');
+          toast.error('Failed to connect wallet. Please try again.');
         }
       }
     }
     setup();
   }, [ready, authenticated, privyWallet]);
 
-  // Fetch blockchain state
-  useEffect(() => {
-    async function fetchState() {
-      if (contract && walletAddress && provider) {
+  // Fetch blockchain state with retry mechanism
+  const fetchState = useCallback(async () => {
+    if (contract && walletAddress && provider) {
+      try {
+        console.log('Fetching blockchain state...');
+        
+        // Fetch balance with retry
+        let balance;
         try {
-          console.log('Fetching blockchain state...');
-          const balance = await provider.getBalance(walletAddress);
+          balance = await provider.getBalance(walletAddress);
           setMonBalance(ethers.formatEther(balance));
-          
+          console.log('MON Balance:', ethers.formatEther(balance));
+        } catch (balanceError) {
+          console.error('Error fetching balance:', balanceError);
+          // Keep previous balance if fetch fails
+        }
+        
+        // Fetch contract state with error handling
+        try {
           const freeSpinsCount = await contract.freeSpins(walletAddress);
           setFreeSpins(Number(freeSpinsCount));
-          
+          console.log('Free spins:', Number(freeSpinsCount));
+        } catch (error) {
+          console.error('Error fetching free spins:', error);
+        }
+        
+        try {
           const discountedSpinsCount = await contract.discountedSpins(walletAddress);
           setDiscountedSpins(Number(discountedSpinsCount));
-          
+          console.log('Discounted spins:', Number(discountedSpinsCount));
+        } catch (error) {
+          console.error('Error fetching discounted spins:', error);
+        }
+        
+        try {
           const discount = await contract.hasDiscount(walletAddress);
           setHasDiscount(Boolean(discount));
-          
+          console.log('Has discount:', Boolean(discount));
+        } catch (error) {
+          console.error('Error fetching discount status:', error);
+        }
+        
+        try {
           const pool = await contract.getRewardPool();
           setRewardPool(ethers.formatEther(pool));
-          
-          console.log('State fetched successfully');
+          console.log('Reward pool:', ethers.formatEther(pool));
         } catch (error) {
-          console.error('Error fetching state:', error);
+          console.error('Error fetching reward pool:', error);
         }
+        
+        console.log('State fetched successfully');
+      } catch (error) {
+        console.error('Error fetching state:', error);
       }
     }
-    fetchState();
   }, [contract, walletAddress, provider]);
 
-  // Spin function with optimistic UI
+  useEffect(() => {
+    fetchState();
+  }, [fetchState]);
+
+  // Show detailed spin result popup
+  const showSpinResultPopup = (combination: string, monReward: bigint, extraSpins: bigint, nftMinted: boolean, txHash: string) => {
+    const fruits = combination.split('|');
+    const fruitEmojis = fruits.map(fruit => FRUIT_EMOJIS[fruit] || fruit).join(' ');
+    const rewardAmount = ethers.formatEther(monReward);
+    const explorerUrl = `${MONAD_TESTNET.blockExplorers.default.url}/tx/${txHash}`;
+    
+    let message = `🎰 Spin Result: ${fruitEmojis}\n`;
+    
+    if (nftMinted) {
+      message += `🎉 LEGENDARY NFT WON! 🍒🍒🍒\n`;
+    } else if (monReward > 0) {
+      message += `💰 Won: ${rewardAmount} MON\n`;
+    } else if (extraSpins > 0) {
+      message += `🎁 Won: ${extraSpins} Free Spins\n`;
+    } else {
+      message += `😔 No reward this time\n`;
+    }
+    
+    message += `🔗 View on Explorer: ${explorerUrl}`;
+    
+    // Create custom toast with detailed info
+    toast.success(
+      <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
+        <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+          🎰 Spin Result: {fruitEmojis}
+        </div>
+        {nftMinted && (
+          <div style={{ color: '#ff6b35', fontWeight: 'bold' }}>
+            🎉 LEGENDARY NFT WON! 🍒🍒🍒
+          </div>
+        )}
+        {monReward > 0 && (
+          <div style={{ color: '#28a745', fontWeight: 'bold' }}>
+            💰 Won: {rewardAmount} MON
+          </div>
+        )}
+        {extraSpins > 0 && (
+          <div style={{ color: '#007bff', fontWeight: 'bold' }}>
+            🎁 Won: {extraSpins} Free Spins
+          </div>
+        )}
+        {monReward === 0n && extraSpins === 0n && !nftMinted && (
+          <div style={{ color: '#6c757d' }}>
+            😔 No reward this time
+          </div>
+        )}
+        <div style={{ marginTop: '8px', fontSize: '12px' }}>
+          <a 
+            href={explorerUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ color: '#007bff', textDecoration: 'underline' }}
+          >
+            🔗 View on Monad Explorer
+          </a>
+        </div>
+      </div>,
+      {
+        autoClose: 8000,
+        hideProgressBar: false,
+      }
+    );
+  };
+
+  // Spin function with optimistic UI and detailed result popup
   const spin = useCallback(async () => {
     if (!contract || !signer || isSpinning) return;
     
@@ -160,6 +289,9 @@ export function useBlockchainGame() {
       const tx = await contract.spin({ value: cost });
       console.log('Transaction sent:', tx.hash);
       
+      // Show pending toast
+      toast.info('🎰 Spinning... Transaction pending', { autoClose: 3000 });
+      
       // Wait for confirmation
       const receipt = await tx.wait();
       console.log('Transaction confirmed:', receipt.hash);
@@ -178,35 +310,39 @@ export function useBlockchainGame() {
         const parsed = contract.interface.parseLog(spinResultEvent);
         const { combination, monReward, extraSpins, nftMinted } = parsed.args;
         
-        console.log('Spin result:', { combination, monReward: ethers.formatEther(monReward), extraSpins, nftMinted });
+        console.log('Spin result:', { 
+          combination, 
+          monReward: ethers.formatEther(monReward), 
+          extraSpins: Number(extraSpins), 
+          nftMinted 
+        });
         
-        // Show rewards
-        if (nftMinted) {
-          toast.success('🎉 Legendary NFT Won! 🍒🍒🍒');
-        } else if (monReward > 0) {
-          toast.success(`💰 Won ${ethers.formatEther(monReward)} MON!`);
-        } else if (extraSpins > 0) {
-          toast.success(`🎰 Won ${extraSpins} free spins!`);
-        }
+        // Show detailed result popup
+        showSpinResultPopup(combination, monReward, extraSpins, nftMinted, receipt.hash);
+      } else {
+        toast.success('🎰 Spin completed! Check your balance.');
       }
       
       // Refresh state after spin
-      if (walletAddress && provider) {
-        const balance = await provider.getBalance(walletAddress);
-        setMonBalance(ethers.formatEther(balance));
-        setFreeSpins(Number(await contract.freeSpins(walletAddress)));
-        setDiscountedSpins(Number(await contract.discountedSpins(walletAddress)));
-        setHasDiscount(await contract.hasDiscount(walletAddress));
-        setRewardPool(ethers.formatEther(await contract.getRewardPool()));
-      }
+      setTimeout(() => {
+        fetchState();
+      }, 1000);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Spin failed:', error);
-      toast.error('Spin failed. Please try again.');
+      
+      // Show specific error messages
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        toast.error('❌ Insufficient MON balance for spin');
+      } else if (error.code === 'USER_REJECTED') {
+        toast.error('❌ Transaction cancelled by user');
+      } else {
+        toast.error('❌ Spin failed. Please try again.');
+      }
     } finally {
       setIsSpinning(false);
     }
-  }, [contract, signer, walletAddress, provider, freeSpins, hasDiscount, discountedSpins, isSpinning]);
+  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, fetchState]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
@@ -226,5 +362,6 @@ export function useBlockchainGame() {
     isSpinning,
     spin,
     getSpinCost,
+    refreshState: fetchState,
   };
 }

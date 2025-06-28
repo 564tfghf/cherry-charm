@@ -33,7 +33,12 @@ const WalletWidget = () => {
     hasDiscount,
     rewardPool,
     getSpinCost,
+    refreshState,
   } = useBlockchainGame();
+
+  const handleRefresh = () => {
+    refreshState();
+  };
 
   if (!authenticated) {
     return (
@@ -55,7 +60,7 @@ const WalletWidget = () => {
           {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Loading...'}
         </div>
         <div className="wallet-balance">
-          {parseFloat(monBalance).toFixed(3)} MON
+          {parseFloat(monBalance || '0').toFixed(3)} MON
         </div>
         <div className={`wallet-arrow ${isExpanded ? 'expanded' : ''}`}>
           ▼
@@ -66,23 +71,28 @@ const WalletWidget = () => {
         <div className="wallet-details">
           <div className="wallet-detail-row">
             <span>Next Spin Cost:</span>
-            <span>{getSpinCost()}</span>
+            <span className="spin-cost">{getSpinCost()}</span>
           </div>
           <div className="wallet-detail-row">
             <span>Free Spins:</span>
-            <span>{freeSpins}</span>
+            <span className="free-spins">{freeSpins}</span>
           </div>
           <div className="wallet-detail-row">
             <span>Discounted Spins:</span>
-            <span>{hasDiscount ? discountedSpins : 0}</span>
+            <span className="discounted-spins">{hasDiscount ? discountedSpins : 0}</span>
           </div>
           <div className="wallet-detail-row">
             <span>Reward Pool:</span>
-            <span>{parseFloat(rewardPool).toFixed(3)} MON</span>
+            <span className="reward-pool">{parseFloat(rewardPool || '0').toFixed(3)} MON</span>
           </div>
-          <button className="wallet-logout-btn" onClick={logout}>
-            Disconnect
-          </button>
+          <div className="wallet-actions">
+            <button className="wallet-refresh-btn" onClick={handleRefresh}>
+              🔄 Refresh
+            </button>
+            <button className="wallet-logout-btn" onClick={logout}>
+              Disconnect
+            </button>
+          </div>
         </div>
       )}
     </div>

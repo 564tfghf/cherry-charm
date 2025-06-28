@@ -4,7 +4,7 @@
   right: 16px;
   z-index: 1000;
   font-family: 'Paytone One', sans-serif;
-  min-width: 200px;
+  min-width: 220px;
 }
 
 .wallet-login-btn {
@@ -106,18 +106,57 @@
   font-weight: bold;
 }
 
+.spin-cost {
+  color: #28a745 !important;
+}
+
+.free-spins {
+  color: #007bff !important;
+}
+
+.discounted-spins {
+  color: #ffc107 !important;
+}
+
+.reward-pool {
+  color: #6f42c1 !important;
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.wallet-refresh-btn {
+  flex: 1;
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: 'Paytone One', sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.wallet-refresh-btn:hover {
+  background: #218838;
+  transform: translateY(-1px);
+}
+
 .wallet-logout-btn {
-  width: 100%;
+  flex: 1;
   background: #ff4757;
   color: white;
   border: none;
   padding: 8px 12px;
   border-radius: 8px;
   font-family: 'Paytone One', sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin-top: 8px;
 }
 
 .wallet-logout-btn:hover {
