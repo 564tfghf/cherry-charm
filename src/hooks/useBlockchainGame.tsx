@@ -14,7 +14,7 @@
  *  https://www.gnu.org/licenses/agpl-3.0.html
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { toast } from 'react-toastify';
@@ -65,6 +65,14 @@ export const MONAD_TESTNET = {
   testnet: true,
 };
 
+interface BlockchainResult {
+  combination: string[];
+  monReward: string;
+  extraSpins: number;
+  nftMinted: boolean;
+  txHash: string;
+}
+
 export function useBlockchainGame() {
   const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -84,17 +92,15 @@ export function useBlockchainGame() {
   const [discountedSpins, setDiscountedSpins] = useState<number>(0);
   const [hasDiscount, setHasDiscount] = useState<boolean>(false);
   const [rewardPool, setRewardPool] = useState<string>('0');
-  const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const [networkError, setNetworkError] = useState<boolean>(false);
 
-  // ✅ Store blockchain result immediately when transaction confirms
-  const [blockchainResult, setBlockchainResult] = useState<{
-    combination: string;
-    monReward: bigint;
-    extraSpins: bigint;
-    nftMinted: boolean;
-    txHash: string;
-  } | null>(null);
+  // ✅ NEW: Background processing state
+  const [isProcessingBlockchain, setIsProcessingBlockchain] = useState<boolean>(false);
+  const [blockchainResult, setBlockchainResult] = useState<BlockchainResult | null>(null);
+  const [isWaitingForReels, setIsWaitingForReels] = useState<boolean>(false);
+  
+  // Ref to track if we should show popup when reels complete
+  const shouldShowPopupRef = useRef<boolean>(false);
 
   // Initialize provider, signer, and contract when Privy wallet is ready
   useEffect(() => {
@@ -157,7 +163,7 @@ export function useBlockchainGame() {
     setup();
   }, [ready, authenticated, privyWallet]);
 
-  // Fetch blockchain state with improved error handling
+  // Fetch blockchain state
   const fetchState = useCallback(async () => {
     if (contract && walletAddress && provider) {
       try {
@@ -212,45 +218,16 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // ✅ Function to be called when reel animation completes - shows popup immediately
-  const onReelAnimationComplete = useCallback(() => {
-    if (blockchainResult) {
-      const { combination, monReward, extraSpins, nftMinted, txHash } = blockchainResult;
-      
-      // Parse combination into fruit array
-      const fruits = combination.split('|');
-      const rewardAmount = ethers.formatEther(monReward);
-      
-      // Show popup immediately
-      setOutcomePopup({
-        combination: fruits,
-        monReward: rewardAmount,
-        extraSpins: Number(extraSpins),
-        nftMinted,
-        txHash
-      });
-      
-      // Clear the result
-      setBlockchainResult(null);
-      setIsSpinning(false); // ✅ Reset spinning state when popup shows
-      
-      // Show success toast after popup
-      setTimeout(() => {
-        toast.success('🎰 Spin complete! Check your rewards.', { autoClose: 2000 });
-      }, 500);
-    }
-  }, [blockchainResult, setOutcomePopup]);
-
-  // ✅ Optimized spin function with proper gas settings for Monad
-  const spin = useCallback(async () => {
-    if (!contract || !signer || isSpinning) return;
+  // ✅ NEW: Background blockchain processing function
+  const processBlockchainSpin = useCallback(async () => {
+    if (!contract || !signer || isProcessingBlockchain) return false;
     
     if (networkError) {
       toast.error('❌ Network connection issues. Please try again later.');
-      return;
+      return false;
     }
     
-    setIsSpinning(true);
+    setIsProcessingBlockchain(true);
     
     try {
       // Determine spin cost quickly
@@ -263,31 +240,21 @@ export function useBlockchainGame() {
       
       console.log('🎰 Starting blockchain spin with cost:', ethers.formatEther(cost), 'MON');
       
-      // ✅ Get current gas price from network for accurate pricing
-      const feeData = await provider!.getFeeData();
-      
-      // ✅ Use much higher gas settings for Monad testnet
+      // ✅ Use optimized gas settings for Monad
       const gasSettings = {
         value: cost,
-        gasLimit: 500000, // Higher gas limit
-        // Use network gas price * 3 for faster inclusion
-        maxFeePerGas: feeData.maxFeePerGas ? feeData.maxFeePerGas * 3n : ethers.parseUnits('100', 'gwei'),
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? feeData.maxPriorityFeePerGas * 2n : ethers.parseUnits('10', 'gwei')
+        gasLimit: 300000, // Reduced for faster processing
+        maxFeePerGas: ethers.parseUnits('20', 'gwei'), // Fixed reasonable amount
+        maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
       };
       
-      console.log('Gas settings:', {
-        gasLimit: gasSettings.gasLimit,
-        maxFeePerGas: ethers.formatUnits(gasSettings.maxFeePerGas, 'gwei') + ' gwei',
-        maxPriorityFeePerGas: ethers.formatUnits(gasSettings.maxPriorityFeePerGas, 'gwei') + ' gwei'
-      });
-      
-      // ✅ Send transaction with proper gas settings
+      // ✅ Send transaction immediately (non-blocking for UI)
       const tx = await contract.spin(gasSettings);
       
       console.log('📤 Transaction sent:', tx.hash);
-      toast.info('🔄 Transaction pending...', { autoClose: 2000 });
+      toast.info('🔄 Processing spin...', { autoClose: 1500 });
       
-      // ✅ Wait for confirmation and process result
+      // ✅ Wait for confirmation in background
       const receipt = await tx.wait();
       console.log('✅ Transaction confirmed:', receipt.hash);
       
@@ -305,54 +272,91 @@ export function useBlockchainGame() {
         const parsed = contract.interface.parseLog(spinResultEvent);
         const { combination, monReward, extraSpins, nftMinted } = parsed.args;
         
-        console.log('🎯 Blockchain result:', { 
-          combination, 
-          monReward: ethers.formatEther(monReward), 
+        // ✅ Parse combination into fruit array
+        const fruits = combination.split('|');
+        const rewardAmount = ethers.formatEther(monReward);
+        
+        console.log('🎯 Blockchain result ready:', { 
+          fruits, 
+          rewardAmount, 
           extraSpins: Number(extraSpins), 
           nftMinted 
         });
         
-        // ✅ Store result immediately - popup will show when reels stop
-        setBlockchainResult({
-          combination,
-          monReward,
-          extraSpins,
+        // ✅ Store result immediately
+        const result: BlockchainResult = {
+          combination: fruits,
+          monReward: rewardAmount,
+          extraSpins: Number(extraSpins),
           nftMinted,
           txHash: receipt.hash
-        });
+        };
+        
+        setBlockchainResult(result);
+        setIsWaitingForReels(true);
+        shouldShowPopupRef.current = true;
         
         // Refresh state in background
         fetchState();
         
-        toast.success('✅ Transaction confirmed!', { autoClose: 2000 });
+        toast.success('✅ Spin result ready!', { autoClose: 1000 });
+        
+        return true;
       }
       
-      return true;
+      return false;
       
     } catch (error: any) {
-      console.error('Spin failed:', error);
-      setIsSpinning(false);
+      console.error('Blockchain spin failed:', error);
+      setIsProcessingBlockchain(false);
       
       // Show specific error messages
       if (error.code === 'INSUFFICIENT_FUNDS') {
         toast.error('❌ Insufficient MON balance for spin');
       } else if (error.code === 'USER_REJECTED') {
         toast.error('❌ Transaction cancelled by user');
-      } else if (error.code === 'CALL_EXCEPTION') {
-        toast.error('❌ Contract call failed. The contract may not be deployed or network issues.');
-      } else if (error.code === 'NETWORK_ERROR' || error.code === 'SERVER_ERROR') {
-        toast.error('❌ Network error. Please check your connection and try again.');
-        setNetworkError(true);
       } else if (error.message && error.message.includes('maxFeePerGas too low')) {
-        toast.error('❌ Gas fee too low. Retrying with higher gas...');
-        // Could implement retry logic here
+        toast.error('❌ Network congested. Please try again.');
       } else {
         toast.error('❌ Spin failed. Please try again.');
       }
       
       return false;
+    } finally {
+      setIsProcessingBlockchain(false);
     }
-  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
+  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, isProcessingBlockchain, networkError, fetchState]);
+
+  // ✅ NEW: Function called when reel animation completes
+  const onReelAnimationComplete = useCallback(() => {
+    if (shouldShowPopupRef.current && blockchainResult) {
+      console.log('🎰 Reels stopped, showing popup with blockchain result');
+      
+      // Show popup immediately
+      setOutcomePopup(blockchainResult);
+      
+      // Reset states
+      setBlockchainResult(null);
+      setIsWaitingForReels(false);
+      shouldShowPopupRef.current = false;
+      
+      // Show final success toast
+      setTimeout(() => {
+        toast.success('🎉 Spin complete!', { autoClose: 2000 });
+      }, 300);
+    }
+  }, [blockchainResult, setOutcomePopup]);
+
+  // ✅ NEW: Main spin function that coordinates both blockchain and UI
+  const spin = useCallback(async () => {
+    if (isProcessingBlockchain) return false;
+    
+    // ✅ Start blockchain processing immediately in background
+    const blockchainPromise = processBlockchainSpin();
+    
+    // ✅ Return immediately so UI can start spinning
+    return blockchainPromise;
+  }, [processBlockchainSpin, isProcessingBlockchain]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
@@ -369,13 +373,15 @@ export function useBlockchainGame() {
     discountedSpins,
     hasDiscount,
     rewardPool,
-    isSpinning,
     networkError,
     spin,
     getSpinCost,
     refreshState: fetchState,
-    // ✅ Export function to be called when reel animation completes
     onReelAnimationComplete,
+    // ✅ NEW: Status indicators
+    isProcessingBlockchain,
+    isWaitingForReels,
     hasPendingResult: !!blockchainResult,
+    isSpinning: isProcessingBlockchain || isWaitingForReels,
   };
 }
