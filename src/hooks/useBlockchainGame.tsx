@@ -14,11 +14,10 @@
  *  https://www.gnu.org/licenses/agpl-3.0.html
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { toast } from 'react-toastify';
-import useGame from '../stores/store';
 
 const SLOT_MACHINE_ABI = [
   {"inputs":[],"name":"fundContract","outputs":[],"stateMutability":"payable","type":"function"},
@@ -65,18 +64,9 @@ export const MONAD_TESTNET = {
   testnet: true,
 };
 
-interface BlockchainResult {
-  combination: string[];
-  monReward: string;
-  extraSpins: number;
-  nftMinted: boolean;
-  txHash: string;
-}
-
 export function useBlockchainGame() {
   const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
-  const { setOutcomePopup } = useGame();
 
   // Only use the Privy embedded wallet
   const privyWallet = wallets.find(w => w.walletClientType === 'privy');
@@ -94,46 +84,22 @@ export function useBlockchainGame() {
   const [rewardPool, setRewardPool] = useState<string>('0');
   const [networkError, setNetworkError] = useState<boolean>(false);
 
-  // ✅ NEW: Background processing state
-  const [isProcessingBlockchain, setIsProcessingBlockchain] = useState<boolean>(false);
-  const [blockchainResult, setBlockchainResult] = useState<BlockchainResult | null>(null);
-  
-  // ✅ NEW: Expose blockchain outcome for reels to use
-  const [blockchainOutcome, setBlockchainOutcome] = useState<BlockchainResult | null>(null);
-
-  // ✅ NEW: Dynamic gas pricing function with even higher values
+  // ✅ FIXED: Much higher gas settings for Monad testnet
   const getDynamicGasSettings = useCallback(async (provider: ethers.BrowserProvider) => {
     try {
-      // Get current gas price from network
-      const feeData = await provider.getFeeData();
-      
-      // ✅ Use VERY high multipliers for Monad testnet to avoid congestion
-      const baseGasPrice = feeData.gasPrice || ethers.parseUnits('100', 'gwei');
-      const maxFeePerGas = feeData.maxFeePerGas || baseGasPrice;
-      const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.parseUnits('10', 'gwei');
-      
-      // ✅ Apply VERY aggressive multipliers for testnet congestion
-      const adjustedMaxFeePerGas = maxFeePerGas * BigInt(5); // 5x current fee
-      const adjustedPriorityFeePerGas = maxPriorityFeePerGas * BigInt(3); // 3x priority fee
-      
-      console.log('🔧 Dynamic gas settings:', {
-        maxFeePerGas: ethers.formatUnits(adjustedMaxFeePerGas, 'gwei') + ' gwei',
-        maxPriorityFeePerGas: ethers.formatUnits(adjustedPriorityFeePerGas, 'gwei') + ' gwei'
-      });
-      
+      // ✅ Use EXTREMELY high static values for Monad testnet
       return {
-        gasLimit: 500000, // Even higher gas limit
-        maxFeePerGas: adjustedMaxFeePerGas,
-        maxPriorityFeePerGas: adjustedPriorityFeePerGas
+        gasLimit: 1000000, // Very high gas limit
+        maxFeePerGas: ethers.parseUnits('1000', 'gwei'), // EXTREMELY high for testnet
+        maxPriorityFeePerGas: ethers.parseUnits('500', 'gwei') // EXTREMELY high priority
       };
     } catch (error) {
-      console.warn('⚠️ Failed to get dynamic gas, using very high fallback:', error);
+      console.warn('⚠️ Failed to get gas settings, using ultra-high fallback:', error);
       
-      // ✅ Fallback to EXTREMELY high static values for testnet
       return {
-        gasLimit: 500000,
-        maxFeePerGas: ethers.parseUnits('500', 'gwei'), // VERY high for testnet
-        maxPriorityFeePerGas: ethers.parseUnits('100', 'gwei') // VERY high priority
+        gasLimit: 1000000,
+        maxFeePerGas: ethers.parseUnits('2000', 'gwei'), // Even higher fallback
+        maxPriorityFeePerGas: ethers.parseUnits('1000', 'gwei')
       };
     }
   }, []);
@@ -254,180 +220,101 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // ✅ IMPROVED: Background blockchain processing with faster execution
-  const processBlockchainSpin = useCallback(async () => {
-    if (!contract || !signer || !provider || isProcessingBlockchain) return false;
+  // ✅ SIMPLIFIED: Blockchain spin function that returns result directly
+  const spin = useCallback(async () => {
+    if (!contract || !signer || !provider) {
+      console.error('Contract not ready');
+      return null;
+    }
     
     if (networkError) {
       toast.error('❌ Network connection issues. Please try again later.');
-      return false;
+      return null;
     }
     
-    setIsProcessingBlockchain(true);
-    
-    // ✅ Retry logic for network congestion - but faster
-    const maxRetries = 2; // Reduced retries for speed
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries) {
-      try {
-        // Determine spin cost quickly
-        let cost = ethers.parseEther('0.1'); // Default spin cost
-        if (freeSpins > 0) {
-          cost = ethers.parseEther('0');
-        } else if (hasDiscount && discountedSpins > 0) {
-          cost = ethers.parseEther('0.01'); // Discounted spin cost
+    try {
+      // Determine spin cost
+      let cost = ethers.parseEther('0.1'); // Default spin cost
+      if (freeSpins > 0) {
+        cost = ethers.parseEther('0');
+      } else if (hasDiscount && discountedSpins > 0) {
+        cost = ethers.parseEther('0.01'); // Discounted spin cost
+      }
+      
+      console.log(`🎰 Starting blockchain spin with cost: ${ethers.formatEther(cost)} MON`);
+      
+      // ✅ Get ultra-high gas settings
+      const gasSettings = await getDynamicGasSettings(provider);
+      
+      const txParams = {
+        value: cost,
+        ...gasSettings
+      };
+      
+      console.log('📊 Using ultra-high gas settings:', {
+        gasLimit: txParams.gasLimit.toString(),
+        maxFeePerGas: ethers.formatUnits(txParams.maxFeePerGas, 'gwei') + ' gwei',
+        maxPriorityFeePerGas: ethers.formatUnits(txParams.maxPriorityFeePerGas, 'gwei') + ' gwei'
+      });
+      
+      // Send transaction
+      const tx = await contract.spin(txParams);
+      console.log('📤 Transaction sent:', tx.hash);
+      
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      console.log('✅ Transaction confirmed:', receipt.hash);
+      
+      // Parse SpinResult event
+      const spinResultEvent = receipt.logs.find((log: any) => {
+        try {
+          const parsed = contract.interface.parseLog(log);
+          return parsed?.name === 'SpinResult';
+        } catch {
+          return false;
         }
+      });
+      
+      if (spinResultEvent) {
+        const parsed = contract.interface.parseLog(spinResultEvent);
+        const { combination, monReward, extraSpins, nftMinted } = parsed.args;
         
-        console.log(`🎰 Starting blockchain spin (attempt ${retryCount + 1}/${maxRetries}) with cost:`, ethers.formatEther(cost), 'MON');
+        // Parse combination into fruit array
+        const fruits = combination.split('|');
+        const rewardAmount = ethers.formatEther(monReward);
         
-        // ✅ Get dynamic gas settings based on current network conditions
-        const gasSettings = await getDynamicGasSettings(provider);
-        
-        const txParams = {
-          value: cost,
-          ...gasSettings
+        const result = {
+          combination: fruits,
+          monReward: rewardAmount,
+          extraSpins: Number(extraSpins),
+          nftMinted,
+          txHash: receipt.hash
         };
         
-        console.log('📊 Using gas settings:', {
-          gasLimit: txParams.gasLimit.toString(),
-          maxFeePerGas: ethers.formatUnits(txParams.maxFeePerGas, 'gwei') + ' gwei',
-          maxPriorityFeePerGas: ethers.formatUnits(txParams.maxPriorityFeePerGas, 'gwei') + ' gwei'
-        });
+        console.log('🎯 Blockchain result:', result);
         
-        // ✅ Send transaction with optimized settings
-        const tx = await contract.spin(txParams);
+        // Refresh state in background
+        fetchState();
         
-        console.log('📤 Transaction sent:', tx.hash);
-        toast.info('🔄 Processing...', { autoClose: 1000 });
-        
-        // ✅ Wait for confirmation in background
-        const receipt = await tx.wait();
-        console.log('✅ Transaction confirmed:', receipt.hash);
-        
-        // Parse SpinResult event
-        const spinResultEvent = receipt.logs.find((log: any) => {
-          try {
-            const parsed = contract.interface.parseLog(log);
-            return parsed?.name === 'SpinResult';
-          } catch {
-            return false;
-          }
-        });
-        
-        if (spinResultEvent) {
-          const parsed = contract.interface.parseLog(spinResultEvent);
-          const { combination, monReward, extraSpins, nftMinted } = parsed.args;
-          
-          // ✅ Parse combination into fruit array
-          const fruits = combination.split('|');
-          const rewardAmount = ethers.formatEther(monReward);
-          
-          console.log('🎯 Blockchain result ready:', { 
-            fruits, 
-            rewardAmount, 
-            extraSpins: Number(extraSpins), 
-            nftMinted 
-          });
-          
-          // ✅ Store result immediately for reels to use
-          const result: BlockchainResult = {
-            combination: fruits,
-            monReward: rewardAmount,
-            extraSpins: Number(extraSpins),
-            nftMinted,
-            txHash: receipt.hash
-          };
-          
-          setBlockchainResult(result);
-          setBlockchainOutcome(result); // ✅ NEW: Expose to reels
-          
-          // Refresh state in background
-          fetchState();
-          
-          toast.success('✅ Result ready!', { autoClose: 800 });
-          
-          setIsProcessingBlockchain(false);
-          return true;
-        }
-        
-        setIsProcessingBlockchain(false);
-        return false;
-        
-      } catch (error: any) {
-        console.error(`Blockchain spin failed (attempt ${retryCount + 1}):`, error);
-        
-        // ✅ Check if it's a gas-related error that we can retry
-        const isGasError = error.message && (
-          error.message.includes('maxFeePerGas too low') ||
-          error.message.includes('insufficient funds for gas') ||
-          error.message.includes('gas required exceeds allowance') ||
-          error.code === 'INSUFFICIENT_FUNDS'
-        );
-        
-        if (isGasError && retryCount < maxRetries - 1) {
-          retryCount++;
-          console.log(`⚠️ Gas error detected, retrying with higher gas (${retryCount}/${maxRetries})...`);
-          toast.warning(`⚠️ Retrying... (${retryCount}/${maxRetries})`, { autoClose: 1000 });
-          
-          // Shorter wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-          continue;
-        }
-        
-        // ✅ Final error handling
-        setIsProcessingBlockchain(false);
-        
-        if (error.code === 'INSUFFICIENT_FUNDS') {
-          toast.error('❌ Insufficient MON balance');
-        } else if (error.code === 'USER_REJECTED') {
-          toast.error('❌ Transaction cancelled');
-        } else if (error.message && error.message.includes('maxFeePerGas too low')) {
-          toast.error('❌ Network congested. Try again.');
-        } else {
-          toast.error('❌ Spin failed. Try again.');
-        }
-        
-        return false;
+        return result;
       }
+      
+      return null;
+      
+    } catch (error: any) {
+      console.error('Blockchain spin failed:', error);
+      
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        toast.error('❌ Insufficient MON balance');
+      } else if (error.code === 'USER_REJECTED') {
+        toast.error('❌ Transaction cancelled');
+      } else {
+        toast.error('❌ Spin failed. Try again.');
+      }
+      
+      return null;
     }
-    
-    // If we get here, all retries failed
-    setIsProcessingBlockchain(false);
-    toast.error('❌ Network heavily congested.');
-    return false;
-    
-  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, isProcessingBlockchain, networkError, fetchState, getDynamicGasSettings]);
-
-  // ✅ NEW: Function called when reel animation completes
-  const onReelAnimationComplete = useCallback(() => {
-    if (blockchainResult) {
-      console.log('🎰 Reels stopped, showing popup with blockchain result');
-      
-      // Show popup immediately
-      setOutcomePopup(blockchainResult);
-      
-      // Reset states
-      setBlockchainResult(null);
-      setBlockchainOutcome(null);
-      
-      // Show final success toast
-      setTimeout(() => {
-        toast.success('🎉 Spin complete!', { autoClose: 1500 });
-      }, 200);
-    }
-  }, [blockchainResult, setOutcomePopup]);
-
-  // ✅ NEW: Main spin function that coordinates both blockchain and UI
-  const spin = useCallback(async () => {
-    if (isProcessingBlockchain) return false;
-    
-    // ✅ Start blockchain processing immediately in background
-    const blockchainPromise = processBlockchainSpin();
-    
-    // ✅ Return immediately so UI can start spinning
-    return blockchainPromise;
-  }, [processBlockchainSpin, isProcessingBlockchain]);
+  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, networkError, fetchState, getDynamicGasSettings]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
@@ -448,10 +335,5 @@ export function useBlockchainGame() {
     spin,
     getSpinCost,
     refreshState: fetchState,
-    onReelAnimationComplete,
-    // ✅ NEW: Status indicators
-    isProcessingBlockchain,
-    hasPendingResult: !!blockchainResult,
-    blockchainOutcome, // ✅ NEW: Expose blockchain outcome for reels
   };
 }
