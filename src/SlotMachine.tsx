@@ -58,7 +58,14 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const updateCoins = useGame((state) => state.updateCoins);
 
   // Blockchain integration
-  const { spin: blockchainSpin, authenticated, isSpinning, getSpinCost } = useBlockchainGame();
+  const { 
+    spin: blockchainSpin, 
+    authenticated, 
+    isSpinning, 
+    getSpinCost,
+    onReelAnimationComplete, // ✅ Function to call when animation completes
+    hasPendingResult // ✅ Check if there's a pending result to show
+  } = useBlockchainGame();
 
   const reelRefs = [
     useRef<ReelGroup>(null),
@@ -66,7 +73,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     useRef<ReelGroup>(null),
   ];
 
-  const [, setStoppedReels] = useState(0);
+  const [stoppedReels, setStoppedReels] = useState(0);
 
   useEffect(() => {
     devLog('PHASE: ' + phase);
@@ -74,8 +81,15 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
       // Only update local coins for display purposes
       // Real rewards come from blockchain
       updateCoins(endgame(fruit0, fruit1, fruit2));
+      
+      // ✅ Check if we have a pending result to show after animation completes
+      if (hasPendingResult) {
+        setTimeout(() => {
+          onReelAnimationComplete();
+        }, 500); // Small delay to ensure animation is fully complete
+      }
     }
-  }, [phase]);
+  }, [phase, fruit0, fruit1, fruit2, updateCoins, hasPendingResult, onReelAnimationComplete]);
 
   const spinSlotMachine = async () => {
     if (!authenticated) {
@@ -158,9 +172,10 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
 
         setStoppedReels((prev) => {
           const newStopped = prev + 1;
+          // ✅ When all reels stop, end the phase after a delay
           if (newStopped === 3) {
             setTimeout(() => {
-              end();
+              end(); // This will trigger the popup display if there's a pending result
             }, 1000);
           }
           return newStopped;

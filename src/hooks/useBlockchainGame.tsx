@@ -107,6 +107,15 @@ export function useBlockchainGame() {
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const [networkError, setNetworkError] = useState<boolean>(false);
 
+  // ✅ Store pending spin result to show after reel animation completes
+  const [pendingSpinResult, setPendingSpinResult] = useState<{
+    combination: string;
+    monReward: bigint;
+    extraSpins: bigint;
+    nftMinted: boolean;
+    txHash: string;
+  } | null>(null);
+
   // Initialize provider, signer, and contract when Privy wallet is ready
   useEffect(() => {
     async function setup() {
@@ -241,8 +250,8 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // Show detailed spin result popup
-  const showSpinResultPopup = (combination: string, monReward: bigint, extraSpins: bigint, nftMinted: boolean, txHash: string) => {
+  // ✅ Function to show popup after reel animation completes
+  const showSpinResultPopup = useCallback((combination: string, monReward: bigint, extraSpins: bigint, nftMinted: boolean, txHash: string) => {
     const fruits = combination.split('|');
     const rewardAmount = ethers.formatEther(monReward);
     
@@ -254,9 +263,18 @@ export function useBlockchainGame() {
       nftMinted,
       txHash
     });
-  };
+  }, [setOutcomePopup]);
 
-  // Spin function with improved error handling
+  // ✅ Function to be called when reel animation completes
+  const onReelAnimationComplete = useCallback(() => {
+    if (pendingSpinResult) {
+      const { combination, monReward, extraSpins, nftMinted, txHash } = pendingSpinResult;
+      showSpinResultPopup(combination, monReward, extraSpins, nftMinted, txHash);
+      setPendingSpinResult(null);
+    }
+  }, [pendingSpinResult, showSpinResultPopup]);
+
+  // Spin function with improved error handling and proper timing
   const spin = useCallback(async () => {
     if (!contract || !signer || isSpinning) return;
     
@@ -278,7 +296,7 @@ export function useBlockchainGame() {
       
       console.log('Spinning with cost:', ethers.formatEther(cost), 'MON');
       
-      // Call spin on contract with retry
+      // ✅ Call spin on contract with retry - no approval prompt should appear
       const tx = await retryWithBackoff(async () => {
         return await contract.spin({ value: cost });
       });
@@ -319,8 +337,16 @@ export function useBlockchainGame() {
           nftMinted 
         });
         
-        // Show detailed result popup
-        showSpinResultPopup(combination, monReward, extraSpins, nftMinted, receipt.hash);
+        // ✅ Store the result to show AFTER reel animation completes
+        setPendingSpinResult({
+          combination,
+          monReward,
+          extraSpins,
+          nftMinted,
+          txHash: receipt.hash
+        });
+        
+        toast.success('🎰 Transaction confirmed! Watch the reels...', { autoClose: 2000 });
       } else {
         toast.success('🎰 Spin completed! Check your balance.');
       }
@@ -351,7 +377,7 @@ export function useBlockchainGame() {
     } finally {
       setIsSpinning(false);
     }
-  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState, setOutcomePopup]);
+  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
@@ -373,5 +399,8 @@ export function useBlockchainGame() {
     spin,
     getSpinCost,
     refreshState: fetchState,
+    // ✅ Export function to be called when reel animation completes
+    onReelAnimationComplete,
+    hasPendingResult: !!pendingSpinResult,
   };
 }

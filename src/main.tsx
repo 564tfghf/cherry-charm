@@ -30,25 +30,35 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       config={{
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
-          noPromptOnSignature: true, // ✅ This prevents transaction approval prompts
+          noPromptOnSignature: true, // ✅ Prevents signature prompts
+          requireUserPasswordOnCreate: false, // ✅ No password required
+          showWalletUIs: false, // ✅ Hide wallet UI prompts
           priceDisplay: {
             primary: 'native-token',
             secondary: 'fiat-currency',
           },
+        },
+        // ✅ Additional settings to prevent transaction approval prompts
+        mfa: {
+          noPromptOnMfaRequired: true,
         },
         loginMethods: ['email', 'google', 'twitter'],
         appearance: {
           theme: 'light',
           accentColor: '#3b0873',
           logo: './images/logo.png',
+          showWalletLoginFirst: false, // ✅ Don't show wallet options first
         },
         supportedChains: [MONAD_TESTNET],
         defaultChain: MONAD_TESTNET,
-        // ✅ Additional session configuration for seamless transactions
+        // ✅ Session configuration for seamless transactions
         session: {
           sameSite: 'lax',
           secure: true,
         },
+        // ✅ Additional wallet configuration
+        walletConnectCloudProjectId: undefined, // Disable WalletConnect
+        solanaClusters: [], // Disable Solana
       }}
     >
       <App />
