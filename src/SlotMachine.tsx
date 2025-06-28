@@ -56,6 +56,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const end = useGame((state) => state.end);
   const addSpin = useGame((state) => state.addSpin);
   const updateCoins = useGame((state) => state.updateCoins);
+  const setOutcomePopup = useGame((state) => state.setOutcomePopup);
 
   // Blockchain integration
   const { 
@@ -75,6 +76,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   
   // ✅ Store blockchain result for THIS specific spin
   const [currentSpinResult, setCurrentSpinResult] = useState<any>(null);
+  const [blockchainProcessing, setBlockchainProcessing] = useState(false);
 
   // ✅ Handle phase changes
   useEffect(() => {
@@ -90,12 +92,12 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   // ✅ SIMPLIFIED: Main spin function
   const spinSlotMachine = async () => {
     if (!authenticated) {
-      devLog('Not authenticated');
+      devLog('❌ Not authenticated');
       return;
     }
 
     if (isSpinning) {
-      devLog('Already spinning');
+      devLog('❌ Already spinning');
       return;
     }
 
@@ -103,6 +105,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     
     // ✅ 1. Lock spinning immediately
     setIsSpinning(true);
+    setBlockchainProcessing(true);
     
     // ✅ 2. Clear any previous result
     setCurrentSpinResult(null);
@@ -112,19 +115,24 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     setStoppedReels(0);
     addSpin();
 
-    // ✅ 4. Start blockchain processing in background (don't wait)
+    // ✅ 4. Start blockchain processing in background
     blockchainSpin().then((result) => {
       if (result) {
         console.log('🎯 Blockchain result received:', result);
         setCurrentSpinResult(result);
+        setBlockchainProcessing(false);
+      } else {
+        console.log('❌ No blockchain result received');
+        setBlockchainProcessing(false);
       }
     }).catch((error) => {
       console.error('❌ Blockchain processing failed:', error);
+      setBlockchainProcessing(false);
     });
 
-    // ✅ 5. Configure longer reel animation to give blockchain time
-    const min = 25;
-    const max = 40;
+    // ✅ 5. Configure reel animation
+    const min = 20;
+    const max = 30;
     const getRandomStopSegment = () =>
       Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -206,7 +214,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
               if (currentSpinResult) {
                 setTimeout(() => {
                   console.log('🎰 Showing popup with result:', currentSpinResult);
-                  // Show popup here with currentSpinResult
+                  setOutcomePopup(currentSpinResult);
                   setCurrentSpinResult(null); // Clear after showing
                 }, 1000);
               }

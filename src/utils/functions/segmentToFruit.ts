@@ -17,91 +17,75 @@
 import { Fruit } from '../enums';
 
 const segmentToFruit = (reel: number, segment: number) => {
+  // ✅ Handle higher segment numbers by using modulo
+  const normalizedSegment = segment % 8;
+  
   switch (reel) {
     case 0:
-      switch (segment) {
-        // case 0:
-        case 8:
+      switch (normalizedSegment) {
+        case 0:
           return Fruit.cherry;
-        // case 1:
-        case 9:
+        case 1:
           return Fruit.lemon;
-        // case 2:
-        case 10:
+        case 2:
           return Fruit.lemon;
-        // case 3:
-        case 11:
+        case 3:
           return Fruit.banana;
-        // case 4:
-        case 12:
+        case 4:
           return Fruit.banana;
-        // case 5:
-        case 13:
+        case 5:
           return Fruit.lemon;
-        // case 6:
-        case 14:
+        case 6:
           return Fruit.apple;
-        // case 7:
-        case 15:
+        case 7:
           return Fruit.lemon;
+        default:
+          return Fruit.cherry;
       }
-      break;
     case 1:
-      switch (segment) {
-        // case 0:
-        case 8:
+      switch (normalizedSegment) {
+        case 0:
           return Fruit.lemon;
-        // case 1:
-        case 9:
+        case 1:
           return Fruit.lemon;
-        // case 2:
-        case 10:
+        case 2:
           return Fruit.banana;
-        // case 3:
-        case 11:
+        case 3:
           return Fruit.apple;
-        // case 4:
-        case 12:
+        case 4:
           return Fruit.cherry;
-        // case 5:
-        case 13:
+        case 5:
           return Fruit.lemon;
-        // case 6:
-        case 14:
+        case 6:
           return Fruit.lemon;
-        // case 7:
-        case 15:
+        case 7:
           return Fruit.apple;
+        default:
+          return Fruit.lemon;
       }
-      break;
     case 2:
-      switch (segment) {
-        // case 0:
-        case 8:
+      switch (normalizedSegment) {
+        case 0:
           return Fruit.lemon;
-        // case 1:
-        case 9:
+        case 1:
           return Fruit.lemon;
-        // case 2:
-        case 10:
+        case 2:
           return Fruit.banana;
-        // case 3:
-        case 11:
+        case 3:
           return Fruit.lemon;
-        // case 4:
-        case 12:
+        case 4:
           return Fruit.cherry;
-        // case 5:
-        case 13:
+        case 5:
           return Fruit.apple;
-        // case 6:
-        case 14:
+        case 6:
           return Fruit.lemon;
-        // case 7:
-        case 15:
+        case 7:
           return Fruit.apple;
+        default:
+          return Fruit.lemon;
       }
-      break;
+    default:
+      return Fruit.cherry;
   }
 };
 
