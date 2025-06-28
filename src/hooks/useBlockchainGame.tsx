@@ -17,7 +17,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
-import { toast } from 'react-toastify';
 
 const SLOT_MACHINE_ABI = [
   {"inputs":[],"name":"fundContract","outputs":[],"stateMutability":"payable","type":"function"},
@@ -138,7 +137,6 @@ export function useBlockchainGame() {
         } catch (error) {
           console.error('Error setting up wallet:', error);
           setNetworkError(true);
-          toast.error('Failed to connect to Monad Testnet. Please check your connection.');
         }
       }
     }
@@ -200,7 +198,7 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // Blockchain spin function with proper event handling
+  // Blockchain spin function - returns result for immediate popup display
   const spin = useCallback(async () => {
     if (!contract || !signer || !provider) {
       console.error('Contract not ready');
@@ -208,7 +206,7 @@ export function useBlockchainGame() {
     }
     
     if (networkError) {
-      toast.error('❌ Network connection issues. Please try again later.');
+      console.error('Network connection issues');
       return null;
     }
     
@@ -282,19 +280,6 @@ export function useBlockchainGame() {
           txHash: receipt.hash
         });
         
-        // Show appropriate toast notifications
-        if (nftMinted) {
-          toast.success('🎉 LEGENDARY NFT WON! 🍒🍒🍒');
-        } else if (parseFloat(rewardAmount) > 0) {
-          toast.success(`💰 Won ${rewardAmount} MON!`);
-        } else if (Number(extraSpins) > 0) {
-          toast.success(`🎁 Won ${extraSpins} Free Spins!`);
-        } else if (newDiscountGranted) {
-          toast.success('🎫 Won 90% Discount on Next 10 Spins!');
-        } else {
-          toast.info('😔 No reward this time - try again!');
-        }
-        
         // Refresh state in background
         setTimeout(() => {
           fetchState();
@@ -304,7 +289,6 @@ export function useBlockchainGame() {
       } else {
         console.error('❌ No SpinResult event found in transaction logs');
         console.log('📋 All logs:', receipt.logs);
-        toast.error('❌ Could not parse spin result from blockchain');
         return null;
       }
       
@@ -312,14 +296,13 @@ export function useBlockchainGame() {
       console.error('❌ Blockchain spin failed:', error);
       
       if (error.code === 'INSUFFICIENT_FUNDS') {
-        toast.error('❌ Insufficient MON balance');
+        console.error('❌ Insufficient MON balance');
       } else if (error.code === 'USER_REJECTED') {
-        toast.error('❌ Transaction cancelled');
+        console.error('❌ Transaction cancelled');
       } else if (error.message?.includes('execution reverted')) {
         console.error('❌ Contract execution reverted:', error.message);
-        toast.error('❌ Contract error - please try again');
       } else {
-        toast.error('❌ Spin failed. Try again.');
+        console.error('❌ Spin failed. Try again.');
       }
       
       return null;
