@@ -104,7 +104,7 @@ export function useBlockchainGame() {
           console.log('Setting up Privy wallet...');
           const ethProvider = await privyWallet.getEthereumProvider();
           
-          // Configure provider for Monad Testnet with faster settings
+          // Configure provider for Monad Testnet
           const ethersProvider = new ethers.BrowserProvider(ethProvider, {
             name: 'monad-testnet',
             chainId: 10143,
@@ -232,6 +232,7 @@ export function useBlockchainGame() {
       
       // Clear the result
       setBlockchainResult(null);
+      setIsSpinning(false); // ✅ Reset spinning state when popup shows
       
       // Show success toast after popup
       setTimeout(() => {
@@ -240,7 +241,7 @@ export function useBlockchainGame() {
     }
   }, [blockchainResult, setOutcomePopup]);
 
-  // ✅ Fast spin function - optimized for speed
+  // ✅ Optimized spin function with proper gas settings for Monad
   const spin = useCallback(async () => {
     if (!contract || !signer || isSpinning) return;
     
@@ -262,65 +263,75 @@ export function useBlockchainGame() {
       
       console.log('🎰 Starting blockchain spin with cost:', ethers.formatEther(cost), 'MON');
       
-      // ✅ Send transaction with optimized gas settings for speed
-      const tx = await contract.spin({ 
+      // ✅ Get current gas price from network for accurate pricing
+      const feeData = await provider!.getFeeData();
+      
+      // ✅ Use much higher gas settings for Monad testnet
+      const gasSettings = {
         value: cost,
-        gasLimit: 300000, // Set reasonable gas limit
-        maxFeePerGas: ethers.parseUnits('20', 'gwei'), // Higher fee for faster confirmation
-        maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
+        gasLimit: 500000, // Higher gas limit
+        // Use network gas price * 3 for faster inclusion
+        maxFeePerGas: feeData.maxFeePerGas ? feeData.maxFeePerGas * 3n : ethers.parseUnits('100', 'gwei'),
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? feeData.maxPriorityFeePerGas * 2n : ethers.parseUnits('10', 'gwei')
+      };
+      
+      console.log('Gas settings:', {
+        gasLimit: gasSettings.gasLimit,
+        maxFeePerGas: ethers.formatUnits(gasSettings.maxFeePerGas, 'gwei') + ' gwei',
+        maxPriorityFeePerGas: ethers.formatUnits(gasSettings.maxPriorityFeePerGas, 'gwei') + ' gwei'
       });
+      
+      // ✅ Send transaction with proper gas settings
+      const tx = await contract.spin(gasSettings);
       
       console.log('📤 Transaction sent:', tx.hash);
+      toast.info('🔄 Transaction pending...', { autoClose: 2000 });
       
-      // ✅ Don't wait for confirmation - process in background
-      // This allows the reel animation to start immediately
-      tx.wait().then((receipt) => {
-        console.log('✅ Transaction confirmed:', receipt.hash);
-        
-        // Parse SpinResult event
-        const spinResultEvent = receipt.logs.find((log: any) => {
-          try {
-            const parsed = contract.interface.parseLog(log);
-            return parsed?.name === 'SpinResult';
-          } catch {
-            return false;
-          }
-        });
-        
-        if (spinResultEvent) {
-          const parsed = contract.interface.parseLog(spinResultEvent);
-          const { combination, monReward, extraSpins, nftMinted } = parsed.args;
-          
-          console.log('🎯 Blockchain result:', { 
-            combination, 
-            monReward: ethers.formatEther(monReward), 
-            extraSpins: Number(extraSpins), 
-            nftMinted 
-          });
-          
-          // ✅ Store result immediately - popup will show when reels stop
-          setBlockchainResult({
-            combination,
-            monReward,
-            extraSpins,
-            nftMinted,
-            txHash: receipt.hash
-          });
-          
-          // Refresh state in background
-          fetchState();
+      // ✅ Wait for confirmation and process result
+      const receipt = await tx.wait();
+      console.log('✅ Transaction confirmed:', receipt.hash);
+      
+      // Parse SpinResult event
+      const spinResultEvent = receipt.logs.find((log: any) => {
+        try {
+          const parsed = contract.interface.parseLog(log);
+          return parsed?.name === 'SpinResult';
+        } catch {
+          return false;
         }
-      }).catch((error) => {
-        console.error('❌ Transaction failed:', error);
-        toast.error('❌ Transaction failed. Please try again.');
-        setIsSpinning(false);
       });
       
-      // ✅ Return immediately - don't wait for confirmation
+      if (spinResultEvent) {
+        const parsed = contract.interface.parseLog(spinResultEvent);
+        const { combination, monReward, extraSpins, nftMinted } = parsed.args;
+        
+        console.log('🎯 Blockchain result:', { 
+          combination, 
+          monReward: ethers.formatEther(monReward), 
+          extraSpins: Number(extraSpins), 
+          nftMinted 
+        });
+        
+        // ✅ Store result immediately - popup will show when reels stop
+        setBlockchainResult({
+          combination,
+          monReward,
+          extraSpins,
+          nftMinted,
+          txHash: receipt.hash
+        });
+        
+        // Refresh state in background
+        fetchState();
+        
+        toast.success('✅ Transaction confirmed!', { autoClose: 2000 });
+      }
+      
       return true;
       
     } catch (error: any) {
       console.error('Spin failed:', error);
+      setIsSpinning(false);
       
       // Show specific error messages
       if (error.code === 'INSUFFICIENT_FUNDS') {
@@ -332,14 +343,16 @@ export function useBlockchainGame() {
       } else if (error.code === 'NETWORK_ERROR' || error.code === 'SERVER_ERROR') {
         toast.error('❌ Network error. Please check your connection and try again.');
         setNetworkError(true);
+      } else if (error.message && error.message.includes('maxFeePerGas too low')) {
+        toast.error('❌ Gas fee too low. Retrying with higher gas...');
+        // Could implement retry logic here
       } else {
         toast.error('❌ Spin failed. Please try again.');
       }
       
-      setIsSpinning(false);
       return false;
     }
-  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
+  }, [contract, signer, provider, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
