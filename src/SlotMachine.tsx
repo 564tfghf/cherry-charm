@@ -25,6 +25,7 @@ import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import useGame from './stores/store';
+import { useBlockchainGame } from './hooks/useBlockchainGame';
 import devLog from './utils/functions/devLog';
 import segmentToFruit from './utils/functions/segmentToFruit';
 import endgame from './utils/functions/endgame';
@@ -54,8 +55,10 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const start = useGame((state) => state.start);
   const end = useGame((state) => state.end);
   const addSpin = useGame((state) => state.addSpin);
-  const coins = useGame((state) => state.coins);
   const updateCoins = useGame((state) => state.updateCoins);
+
+  // Blockchain integration
+  const { spin: blockchainSpin, authenticated, isSpinning, getSpinCost } = useBlockchainGame();
 
   const reelRefs = [
     useRef<ReelGroup>(null),
@@ -68,11 +71,19 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   useEffect(() => {
     devLog('PHASE: ' + phase);
     if (phase === 'idle') {
+      // Only update local coins for display purposes
+      // Real rewards come from blockchain
       updateCoins(endgame(fruit0, fruit1, fruit2));
     }
   }, [phase]);
 
-  const spinSlotMachine = () => {
+  const spinSlotMachine = async () => {
+    if (!authenticated) {
+      devLog('Not authenticated');
+      return;
+    }
+
+    // Start optimistic UI immediately
     start();
     setStoppedReels(0);
 
@@ -85,6 +96,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     setFruit1('');
     setFruit2('');
 
+    // Start reel animations
     for (let i = 0; i < 3; i++) {
       const reel = reelRefs[i].current;
       if (reel) {
@@ -94,20 +106,29 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
         reel.reelStopSegment = 0;
       }
     }
+
+    // Execute blockchain transaction in background
+    try {
+      await blockchainSpin();
+      addSpin();
+    } catch (error) {
+      devLog('Blockchain spin failed: ' + error);
+      // Revert optimistic UI if needed
+      end();
+    }
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'Space' && phase !== 'spinning' && coins > 0) {
+      if (event.code === 'Space' && phase !== 'spinning' && authenticated && !isSpinning) {
+        event.preventDefault();
         spinSlotMachine();
-        addSpin();
-        updateCoins(-1);
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [phase, coins]);
+  }, [phase, authenticated, isSpinning]);
 
   useFrame(() => {
     for (let i = 0; i < reelRefs.length; i++) {
@@ -157,6 +178,8 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const [textZ, setTextZ] = useState(1.6);
   const [textY, setTextY] = useState(-14);
 
+  const canSpin = authenticated && phase !== 'spinning' && !isSpinning;
+
   return (
     <>
       <Reel
@@ -191,15 +214,15 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
         position={[0, buttonY, buttonZ]}
         rotation={[-Math.PI / 8, 0, 0]}
         onClick={() => {
-          if (phase !== 'spinning' && coins > 0) {
+          if (canSpin) {
             spinSlotMachine();
-            addSpin();
-            updateCoins(-1);
           }
         }}
         onPointerDown={() => {
-          setButtonZ(-1);
-          setButtonY(-13.5);
+          if (canSpin) {
+            setButtonZ(-1);
+            setButtonY(-13.5);
+          }
         }}
         onPointerUp={() => {
           setButtonZ(0);
@@ -215,15 +238,22 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
         fontSize={3}
         font="./fonts/nickname.otf"
         onPointerDown={() => {
-          setTextZ(1.3);
-          setTextY(-14.1);
+          if (canSpin) {
+            setTextZ(1.3);
+            setTextY(-14.1);
+          }
         }}
         onPointerUp={() => {
           setTextZ(1.6);
           setTextY(-14);
         }}
       >
-        {phase === 'idle' ? 'SPIN' : 'SPINNING'}
+        {!authenticated 
+          ? 'CONNECT WALLET' 
+          : isSpinning || phase === 'spinning' 
+            ? 'SPINNING' 
+            : `SPIN (${getSpinCost()})`
+        }
       </Text>
     </>
   );

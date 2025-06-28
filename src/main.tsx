@@ -16,11 +16,41 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { PrivyProvider } from '@privy-io/react-auth';
+import { ToastContainer } from 'react-toastify';
 import App from './App.tsx';
 import './style.css';
+import 'react-toastify/dist/ReactToastify.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <PrivyProvider
+      appId="cmbi8jxhs000zju0mbg0xx3v3"
+      config={{
+        embeddedWallets: {
+          createOnLogin: 'users-without-wallets',
+          noPromptOnSignature: true,
+        },
+        loginMethods: ['email', 'google', 'twitter'],
+        appearance: {
+          theme: 'light',
+          accentColor: '#3b0873',
+        },
+      }}
+    >
+      <App />
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
+    </PrivyProvider>
   </React.StrictMode>
 );

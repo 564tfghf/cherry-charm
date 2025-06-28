@@ -1,0 +1,126 @@
+.wallet-widget {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  font-family: 'Paytone One', sans-serif;
+  min-width: 200px;
+}
+
+.wallet-login-btn {
+  background: linear-gradient(135deg, #3b0873, #6913c5);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-family: 'Paytone One', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(59, 8, 115, 0.3);
+}
+
+.wallet-login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 8, 115, 0.4);
+}
+
+.wallet-header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 2px solid #3b0873;
+  border-radius: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wallet-header:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(59, 8, 115, 0.2);
+}
+
+.wallet-address {
+  font-size: 12px;
+  color: #3b0873;
+  font-weight: bold;
+}
+
+.wallet-balance {
+  font-size: 14px;
+  color: #6913c5;
+  font-weight: bold;
+}
+
+.wallet-arrow {
+  font-size: 10px;
+  color: #3b0873;
+  transition: transform 0.3s ease;
+}
+
+.wallet-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.wallet-details {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  border: 2px solid #3b0873;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 16px;
+  margin-top: -2px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wallet-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.wallet-detail-row span:first-child {
+  color: #666;
+}
+
+.wallet-detail-row span:last-child {
+  color: #3b0873;
+  font-weight: bold;
+}
+
+.wallet-logout-btn {
+  width: 100%;
+  background: #ff4757;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: 'Paytone One', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 8px;
+}
+
+.wallet-logout-btn:hover {
+  background: #ff3742;
+  transform: translateY(-1px);
+}

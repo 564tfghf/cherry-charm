@@ -15,18 +15,25 @@
  */
 
 import useGame from '../stores/store';
+import { useBlockchainGame } from '../hooks/useBlockchainGame';
 import Modal from './modal/Modal';
 import HelpButton from './helpButton/HelpButton';
+import WalletWidget from '../components/WalletWidget';
 import './style.css';
 
 const Interface = () => {
-  // const phase = useGame((state) => state.phase);
   const modal = useGame((state) => state.modal);
   const coins = useGame((state) => state.coins);
   const spins = useGame((state) => state.spins);
+  
+  // Get blockchain state for display
+  const { monBalance, authenticated } = useBlockchainGame();
 
   return (
     <>
+      {/* Wallet Widget - Top Right */}
+      <WalletWidget />
+
       {/* Help Button */}
       <HelpButton />
 
@@ -42,9 +49,11 @@ const Interface = () => {
       </a>
 
       <div className="interface">
-        {/* Coins */}
+        {/* Coins - Show blockchain balance if authenticated, otherwise local coins */}
         <div className="coins-section">
-          <div className="coins-number">{coins}</div>
+          <div className="coins-number">
+            {authenticated ? parseFloat(monBalance).toFixed(2) : coins}
+          </div>
           <img className="coins-image" src="./images/coin.png" />
         </div>
 
@@ -52,9 +61,6 @@ const Interface = () => {
         <div className="spins-section">
           <div className="spins-number">{spins}</div>
         </div>
-
-        {/* Phase */}
-        {/* <div >{phase.toUpperCase()}</div> */}
       </div>
     </>
   );
