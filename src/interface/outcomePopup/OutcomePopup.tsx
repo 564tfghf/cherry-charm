@@ -14,6 +14,7 @@
  *  https://www.gnu.org/licenses/agpl-3.0.html
  */
 
+import { useEffect } from 'react';
 import useGame from '../../stores/store';
 import { MONAD_TESTNET } from '../../hooks/useBlockchainGame';
 import './style.css';
@@ -30,6 +31,25 @@ const OutcomePopup = ({ combination, monReward, extraSpins, nftMinted, txHash }:
   const { setOutcomePopup } = useGame();
 
   const explorerUrl = `${MONAD_TESTNET.blockExplorers.default.url}/tx/${txHash}`;
+
+  // ✅ Prevent background scrolling when popup is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  // ✅ Handle ESC key to close popup
+  useEffect(() => {
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOutcomePopup(null);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [setOutcomePopup]);
 
   const getFruitImage = (fruit: string) => {
     const fruitMap: { [key: string]: string } = {
@@ -63,14 +83,19 @@ const OutcomePopup = ({ combination, monReward, extraSpins, nftMinted, txHash }:
     return rewards;
   };
 
+  const closePopup = () => {
+    console.log('🎰 Closing popup manually');
+    setOutcomePopup(null);
+  };
+
   return (
-    <div className="outcome-popup" onClick={() => setOutcomePopup(null)}>
+    <div className="outcome-popup" onClick={closePopup}>
       <div className="outcome-popup-box" onClick={(e) => e.stopPropagation()}>
         <div className="outcome-popup-main">
           {/* Close button */}
           <button 
             className="outcome-close-btn" 
-            onClick={() => setOutcomePopup(null)}
+            onClick={closePopup}
           >
             ✕
           </button>
@@ -78,7 +103,7 @@ const OutcomePopup = ({ combination, monReward, extraSpins, nftMinted, txHash }:
           {/* Title */}
           <div className="outcome-title">🎰 Spin Result</div>
           
-          {/* Fruit combination */}
+          {/* Fruit combination - EXACT match with reel display */}
           <div className="outcome-fruits">
             {combination.map((fruit, index) => (
               <img 
@@ -86,8 +111,14 @@ const OutcomePopup = ({ combination, monReward, extraSpins, nftMinted, txHash }:
                 className="outcome-fruit-image" 
                 src={getFruitImage(fruit)} 
                 alt={fruit}
+                title={`Reel ${index + 1}: ${fruit.toUpperCase()}`}
               />
             ))}
+          </div>
+          
+          {/* Combination text for verification */}
+          <div className="outcome-combination-text">
+            {combination.map(fruit => fruit.toUpperCase()).join(' | ')}
           </div>
           
           {/* Rewards */}
@@ -117,6 +148,11 @@ const OutcomePopup = ({ combination, monReward, extraSpins, nftMinted, txHash }:
             >
               🔗 View Transaction on Monad Explorer
             </a>
+          </div>
+          
+          {/* Instructions */}
+          <div className="outcome-instructions">
+            Click anywhere outside or press ESC to close and continue spinning
           </div>
         </div>
       </div>
