@@ -72,28 +72,27 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     useRef<ReelGroup>(null),
   ];
 
-  // ✅ SIMPLIFIED STATE - Only what we need
+  // ✅ SIMPLIFIED STATE MANAGEMENT
   const [gameState, setGameState] = useState<'idle' | 'spinning' | 'waiting-for-popup'>('idle');
-  const [blockchainResult, setBlockchainResult] = useState<any>(null);
+  const [pendingBlockchainResult, setPendingBlockchainResult] = useState<any>(null);
   const [stoppedReels, setStoppedReels] = useState(0);
 
-  // ✅ CLEAR: Handle phase changes for local coins only
+  // ✅ Handle phase changes for local coins only
   useEffect(() => {
     devLog('PHASE: ' + phase);
-    if (phase === 'idle' && gameState === 'idle' && !blockchainResult) {
+    if (phase === 'idle' && gameState === 'idle' && !pendingBlockchainResult) {
       // Only update local coins if no blockchain result
       updateCoins(endgame(fruit0, fruit1, fruit2));
     }
-  }, [phase, gameState, blockchainResult]);
+  }, [phase, gameState, pendingBlockchainResult]);
 
-  // ✅ MAIN SPIN FUNCTION - Crystal clear flow
+  // ✅ MAIN SPIN FUNCTION - Wait for blockchain OR timeout
   const spinSlotMachine = async () => {
     if (!authenticated) {
       devLog('❌ Not authenticated');
       return;
     }
 
-    // ✅ STRICT: Cannot spin if not idle
     if (gameState !== 'idle') {
       console.log('❌ Cannot spin: Game state is', gameState);
       return;
@@ -103,7 +102,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     
     // ✅ 1. LOCK EVERYTHING
     setGameState('spinning');
-    setBlockchainResult(null);
+    setPendingBlockchainResult(null);
     
     // ✅ 2. START UI IMMEDIATELY
     start();
@@ -115,34 +114,58 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     setFruit1('');
     setFruit2('');
 
-    // ✅ 4. START BLOCKCHAIN IN BACKGROUND
-    blockchainSpin().then((result) => {
+    // ✅ 4. START BLOCKCHAIN SPIN WITH TIMEOUT
+    let blockchainResult: any = null;
+    let blockchainCompleted = false;
+
+    // Start blockchain spin
+    const blockchainPromise = blockchainSpin().then((result) => {
+      blockchainCompleted = true;
       if (result) {
         console.log('🎯 BLOCKCHAIN RESULT READY:', result);
-        setBlockchainResult(result);
-      } else {
-        console.log('❌ No blockchain result');
+        blockchainResult = result;
+        setPendingBlockchainResult(result);
       }
+      return result;
     }).catch((error) => {
+      blockchainCompleted = true;
       console.error('❌ Blockchain error:', error);
+      return null;
     });
 
-    // ✅ 5. CONFIGURE REEL ANIMATION
-    const min = 25;
-    const max = 35;
-    const getRandomStopSegment = () =>
-      Math.floor(Math.random() * (max - min + 1)) + min;
+    // ✅ 5. CONFIGURE REEL ANIMATION - LONGER SPIN TIME
+    const minSpinTime = 8000; // 8 seconds minimum
+    const maxSpinTime = 12000; // 12 seconds maximum
+    const spinDuration = Math.random() * (maxSpinTime - minSpinTime) + minSpinTime;
+    
+    console.log(`🎰 Reels will spin for ${spinDuration/1000} seconds`);
 
-    // Start reel animations
+    // Start reel animations with longer duration
     for (let i = 0; i < 3; i++) {
       const reel = reelRefs[i].current;
       if (reel) {
         reel.rotation.x = 0;
         reel.reelSegment = 0;
-        reel.reelSpinUntil = getRandomStopSegment();
+        // Calculate segments needed for the spin duration
+        const segmentsToSpin = Math.floor(spinDuration / 100); // ~10 segments per second
+        reel.reelSpinUntil = segmentsToSpin + (i * 5); // Stagger reel stops
         reel.reelStopSegment = 0;
       }
     }
+
+    // ✅ 6. WAIT FOR BLOCKCHAIN OR TIMEOUT
+    setTimeout(async () => {
+      if (!blockchainCompleted) {
+        console.log('⏰ Blockchain taking too long, waiting a bit more...');
+        // Wait another 5 seconds
+        setTimeout(async () => {
+          if (!blockchainCompleted) {
+            console.log('⏰ Blockchain timeout - using random results');
+          }
+          // Blockchain result will be handled by the pending state
+        }, 5000);
+      }
+    }, spinDuration);
   };
 
   useEffect(() => {
@@ -157,7 +180,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [gameState, authenticated]);
 
-  // ✅ REEL ANIMATION - Clear blockchain result usage
+  // ✅ REEL ANIMATION - Use blockchain result when available
   useFrame(() => {
     if (gameState !== 'spinning') return;
 
@@ -169,7 +192,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
 
       const targetRotationX =
         (reel.reelSpinUntil - reel.reelSegment) * WHEEL_SEGMENT;
-      const rotationSpeed = 0.1;
+      const rotationSpeed = 0.08; // Slightly slower for longer spins
 
       if (reel.rotation.x < targetRotationX) {
         reel.rotation.x += rotationSpeed;
@@ -178,9 +201,9 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
         // ✅ REEL STOPPED - Determine fruit to show
         let fruit;
         
-        if (blockchainResult && blockchainResult.combination) {
+        if (pendingBlockchainResult && pendingBlockchainResult.combination) {
           // ✅ USE BLOCKCHAIN RESULT
-          fruit = blockchainResult.combination[i]?.toUpperCase();
+          fruit = pendingBlockchainResult.combination[i]?.toUpperCase();
           console.log(`🎯 Reel ${i + 1} using BLOCKCHAIN result: ${fruit}`);
         } else {
           // ✅ USE RANDOM RESULT (fallback)
@@ -207,13 +230,13 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
             setTimeout(() => {
               end();
               
-              // ✅ DECIDE WHAT TO DO NEXT
-              if (blockchainResult) {
-                console.log('🎯 BLOCKCHAIN RESULT AVAILABLE - SHOWING POPUP');
+              // ✅ ALWAYS SHOW POPUP IF WE HAVE BLOCKCHAIN RESULT
+              if (pendingBlockchainResult) {
+                console.log('🎯 SHOWING POPUP WITH BLOCKCHAIN RESULT');
                 setGameState('waiting-for-popup');
                 setTimeout(() => {
-                  setOutcomePopup(blockchainResult);
-                }, 1500);
+                  setOutcomePopup(pendingBlockchainResult);
+                }, 1000);
               } else {
                 console.log('🎲 NO BLOCKCHAIN RESULT - BACK TO IDLE');
                 setGameState('idle');
@@ -231,9 +254,20 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
     if (gameState === 'waiting-for-popup' && !outcomePopup) {
       console.log('🎰 POPUP DISMISSED - BACK TO IDLE');
       setGameState('idle');
-      setBlockchainResult(null);
+      setPendingBlockchainResult(null);
     }
   }, [gameState, outcomePopup]);
+
+  // ✅ HANDLE LATE BLOCKCHAIN RESULTS
+  useEffect(() => {
+    if (pendingBlockchainResult && gameState === 'idle' && phase === 'idle') {
+      console.log('🎯 LATE BLOCKCHAIN RESULT - SHOWING POPUP NOW');
+      setGameState('waiting-for-popup');
+      setTimeout(() => {
+        setOutcomePopup(pendingBlockchainResult);
+      }, 500);
+    }
+  }, [pendingBlockchainResult, gameState, phase]);
 
   useImperativeHandle(ref, () => ({
     reelRefs,
@@ -244,10 +278,10 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
   const [textZ, setTextZ] = useState(1.6);
   const [textY, setTextY] = useState(-14);
 
-  // ✅ SIMPLE: Can only spin when idle
+  // ✅ Can only spin when idle
   const canSpin = authenticated && gameState === 'idle';
 
-  // ✅ CLEAR: Button text based on game state
+  // ✅ Button text based on game state
   const getButtonText = () => {
     if (!authenticated) return 'CONNECT WALLET';
     
@@ -255,7 +289,7 @@ const SlotMachine = forwardRef(({ value }: SlotMachineProps, ref) => {
       case 'spinning':
         return 'SPINNING...';
       case 'waiting-for-popup':
-        return 'CLOSE POPUP FIRST';
+        return 'CLOSE POPUP TO CONTINUE';
       case 'idle':
       default:
         return `SPIN (${getSpinCost()})`;

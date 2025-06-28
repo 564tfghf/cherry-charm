@@ -220,7 +220,7 @@ export function useBlockchainGame() {
     fetchState();
   }, [fetchState]);
 
-  // ✅ SIMPLIFIED: Blockchain spin function that returns result directly
+  // ✅ ENHANCED: Blockchain spin function with better error handling and logging
   const spin = useCallback(async () => {
     if (!contract || !signer || !provider) {
       console.error('Contract not ready');
@@ -242,6 +242,7 @@ export function useBlockchainGame() {
       }
       
       console.log(`🎰 Starting blockchain spin with cost: ${ethers.formatEther(cost)} MON`);
+      console.log(`📊 Current state - Free: ${freeSpins}, Discounted: ${discountedSpins}, HasDiscount: ${hasDiscount}`);
       
       // ✅ Get ultra-high gas settings
       const gasSettings = await getDynamicGasSettings(provider);
@@ -265,19 +266,31 @@ export function useBlockchainGame() {
       const receipt = await tx.wait();
       console.log('✅ Transaction confirmed:', receipt.hash);
       
-      // Parse SpinResult event
-      const spinResultEvent = receipt.logs.find((log: any) => {
+      // ✅ ENHANCED: Better event parsing with detailed logging
+      console.log('🔍 Parsing transaction logs...');
+      console.log('📋 Total logs found:', receipt.logs.length);
+      
+      let spinResultEvent = null;
+      
+      // Try to find SpinResult event
+      for (let i = 0; i < receipt.logs.length; i++) {
+        const log = receipt.logs[i];
         try {
           const parsed = contract.interface.parseLog(log);
-          return parsed?.name === 'SpinResult';
-        } catch {
-          return false;
+          console.log(`📝 Log ${i}: ${parsed?.name || 'Unknown'}`);
+          
+          if (parsed?.name === 'SpinResult') {
+            spinResultEvent = parsed;
+            console.log('🎯 Found SpinResult event!');
+            break;
+          }
+        } catch (parseError) {
+          console.log(`⚠️ Could not parse log ${i}:`, parseError);
         }
-      });
+      }
       
       if (spinResultEvent) {
-        const parsed = contract.interface.parseLog(spinResultEvent);
-        const { combination, monReward, extraSpins, nftMinted } = parsed.args;
+        const { combination, monReward, extraSpins, nftMinted, discountApplied, newDiscountGranted } = spinResultEvent.args;
         
         // Parse combination into fruit array
         const fruits = combination.split('|');
@@ -288,26 +301,57 @@ export function useBlockchainGame() {
           monReward: rewardAmount,
           extraSpins: Number(extraSpins),
           nftMinted,
+          discountApplied,
+          newDiscountGranted,
           txHash: receipt.hash
         };
         
-        console.log('🎯 Blockchain result:', result);
+        console.log('🎯 DETAILED Blockchain result:', {
+          combination: fruits.join(' | '),
+          monReward: rewardAmount + ' MON',
+          extraSpins: Number(extraSpins),
+          nftMinted: nftMinted ? 'YES' : 'NO',
+          discountApplied: discountApplied ? 'YES' : 'NO',
+          newDiscountGranted: newDiscountGranted ? 'YES' : 'NO',
+          txHash: receipt.hash
+        });
+        
+        // ✅ INVESTIGATE: Log reward pool status
+        try {
+          const currentRewardPool = await contract.getRewardPool();
+          console.log('💰 Current reward pool:', ethers.formatEther(currentRewardPool), 'MON');
+          
+          if (parseFloat(ethers.formatEther(currentRewardPool)) < 0.1) {
+            console.log('⚠️ WARNING: Reward pool is very low! This might explain no rewards.');
+            toast.warning('⚠️ Reward pool is low - rewards may be limited');
+          }
+        } catch (poolError) {
+          console.error('❌ Could not check reward pool:', poolError);
+        }
         
         // Refresh state in background
-        fetchState();
+        setTimeout(() => {
+          fetchState();
+        }, 2000);
         
         return result;
+      } else {
+        console.error('❌ No SpinResult event found in transaction logs');
+        console.log('📋 All logs:', receipt.logs);
+        toast.error('❌ Could not parse spin result from blockchain');
+        return null;
       }
       
-      return null;
-      
     } catch (error: any) {
-      console.error('Blockchain spin failed:', error);
+      console.error('❌ Blockchain spin failed:', error);
       
       if (error.code === 'INSUFFICIENT_FUNDS') {
         toast.error('❌ Insufficient MON balance');
       } else if (error.code === 'USER_REJECTED') {
         toast.error('❌ Transaction cancelled');
+      } else if (error.message?.includes('execution reverted')) {
+        console.error('❌ Contract execution reverted:', error.message);
+        toast.error('❌ Contract error - please try again');
       } else {
         toast.error('❌ Spin failed. Try again.');
       }
