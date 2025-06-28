@@ -40,9 +40,9 @@ const SLOT_MACHINE_ABI = [
 
 const SLOT_MACHINE_ADDRESS = '0xc66f746F6Bbef6533c6cd9AE73B290237c228cE5';
 
-// Monad Testnet configuration - updated with correct RPC URL
+// Monad Testnet configuration - Chain ID 10143
 export const MONAD_TESTNET = {
-  id: 41454,
+  id: 10143,
   name: 'Monad Testnet',
   network: 'monad-testnet',
   nativeCurrency: {
