@@ -19,6 +19,7 @@ import ReactDOM from 'react-dom/client';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { ToastContainer } from 'react-toastify';
 import App from './App.tsx';
+import { MONAD_TESTNET } from './hooks/useBlockchainGame.tsx';
 import './style.css';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -36,6 +37,8 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
           theme: 'light',
           accentColor: '#3b0873',
         },
+        supportedChains: [MONAD_TESTNET],
+        defaultChain: MONAD_TESTNET,
       }}
     >
       <App />

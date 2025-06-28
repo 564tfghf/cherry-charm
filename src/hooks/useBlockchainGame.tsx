@@ -40,8 +40,8 @@ const SLOT_MACHINE_ABI = [
 
 const SLOT_MACHINE_ADDRESS = '0xc66f746F6Bbef6533c6cd9AE73B290237c228cE5';
 
-// Monad Testnet configuration
-const MONAD_TESTNET = {
+// Monad Testnet configuration - exported for use in main.tsx
+export const MONAD_TESTNET = {
   id: 41454,
   name: 'Monad Testnet',
   network: 'monad-testnet',
@@ -54,10 +54,14 @@ const MONAD_TESTNET = {
     default: {
       http: ['https://testnet1.monad.xyz'],
     },
+    public: {
+      http: ['https://testnet1.monad.xyz'],
+    },
   },
   blockExplorers: {
     default: { name: 'Monad Explorer', url: 'https://testnet1.monad.xyz' },
   },
+  testnet: true,
 };
 
 // Fruit emoji mapping
