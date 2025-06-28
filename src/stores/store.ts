@@ -165,7 +165,6 @@ const useGame = create<State>()(
      */
     // receivedSegments: [-1, -1, -1],
     // setReceivedSegments: (segments: number[]) => {
-    //   segments: number[]) => {
     //   set(() => {
     //     return {
     //       receivedSegments: segments,
