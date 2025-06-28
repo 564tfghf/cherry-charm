@@ -13,4 +13,10 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
   },
+  define: {
+    global: 'globalThis',
+  },
+  optimizeDeps: {
+    include: ['buffer'],
+  },
 });

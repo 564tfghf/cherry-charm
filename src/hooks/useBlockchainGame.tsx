@@ -40,7 +40,7 @@ const SLOT_MACHINE_ABI = [
 
 const SLOT_MACHINE_ADDRESS = '0xc66f746F6Bbef6533c6cd9AE73B290237c228cE5';
 
-// Monad Testnet configuration - exported for use in main.tsx
+// Monad Testnet configuration - updated with correct RPC URL
 export const MONAD_TESTNET = {
   id: 41454,
   name: 'Monad Testnet',
@@ -52,14 +52,14 @@ export const MONAD_TESTNET = {
   },
   rpcUrls: {
     default: {
-      http: ['https://testnet1.monad.xyz'],
+      http: ['https://testnet-rpc.monad.xyz'],
     },
     public: {
-      http: ['https://testnet1.monad.xyz'],
+      http: ['https://testnet-rpc.monad.xyz'],
     },
   },
   blockExplorers: {
-    default: { name: 'Monad Explorer', url: 'https://testnet1.monad.xyz' },
+    default: { name: 'Monad Explorer', url: 'https://testnet.monadexplorer.com' },
   },
   testnet: true,
 };
@@ -70,6 +70,26 @@ const FRUIT_EMOJIS: { [key: string]: string } = {
   'apple': '🍎',
   'banana': '🍌',
   'lemon': '🍋'
+};
+
+// Retry utility function
+const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      
+      const delay = baseDelay * Math.pow(2, i);
+      console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
 };
 
 export function useBlockchainGame() {
@@ -91,6 +111,7 @@ export function useBlockchainGame() {
   const [hasDiscount, setHasDiscount] = useState<boolean>(false);
   const [rewardPool, setRewardPool] = useState<string>('0');
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
+  const [networkError, setNetworkError] = useState<boolean>(false);
 
   // Initialize provider, signer, and contract when Privy wallet is ready
   useEffect(() => {
@@ -137,68 +158,87 @@ export function useBlockchainGame() {
           const slotContract = new ethers.Contract(SLOT_MACHINE_ADDRESS, SLOT_MACHINE_ABI, ethersSigner);
           setContract(slotContract);
           console.log('Contract initialized');
+          
+          setNetworkError(false);
         } catch (error) {
           console.error('Error setting up wallet:', error);
-          toast.error('Failed to connect wallet. Please try again.');
+          setNetworkError(true);
+          toast.error('Failed to connect to Monad Testnet. Please check your connection.');
         }
       }
     }
     setup();
   }, [ready, authenticated, privyWallet]);
 
-  // Fetch blockchain state with retry mechanism
+  // Fetch blockchain state with improved error handling
   const fetchState = useCallback(async () => {
     if (contract && walletAddress && provider) {
       try {
         console.log('Fetching blockchain state...');
         
-        // Fetch balance with retry
-        let balance;
+        // Fetch balance with retry and fallback
         try {
-          balance = await provider.getBalance(walletAddress);
+          const balance = await retryWithBackoff(async () => {
+            return await provider.getBalance(walletAddress);
+          });
           setMonBalance(ethers.formatEther(balance));
           console.log('MON Balance:', ethers.formatEther(balance));
+          setNetworkError(false);
         } catch (balanceError) {
           console.error('Error fetching balance:', balanceError);
+          setNetworkError(true);
           // Keep previous balance if fetch fails
         }
         
-        // Fetch contract state with error handling
-        try {
-          const freeSpinsCount = await contract.freeSpins(walletAddress);
-          setFreeSpins(Number(freeSpinsCount));
-          console.log('Free spins:', Number(freeSpinsCount));
-        } catch (error) {
-          console.error('Error fetching free spins:', error);
-        }
-        
-        try {
-          const discountedSpinsCount = await contract.discountedSpins(walletAddress);
-          setDiscountedSpins(Number(discountedSpinsCount));
-          console.log('Discounted spins:', Number(discountedSpinsCount));
-        } catch (error) {
-          console.error('Error fetching discounted spins:', error);
-        }
-        
-        try {
-          const discount = await contract.hasDiscount(walletAddress);
-          setHasDiscount(Boolean(discount));
-          console.log('Has discount:', Boolean(discount));
-        } catch (error) {
-          console.error('Error fetching discount status:', error);
-        }
-        
-        try {
-          const pool = await contract.getRewardPool();
-          setRewardPool(ethers.formatEther(pool));
-          console.log('Reward pool:', ethers.formatEther(pool));
-        } catch (error) {
-          console.error('Error fetching reward pool:', error);
+        // Fetch contract state with error handling and fallbacks
+        const contractCalls = [
+          {
+            name: 'freeSpins',
+            call: () => contract.freeSpins(walletAddress),
+            setter: (value: any) => setFreeSpins(Number(value)),
+            fallback: 0
+          },
+          {
+            name: 'discountedSpins',
+            call: () => contract.discountedSpins(walletAddress),
+            setter: (value: any) => setDiscountedSpins(Number(value)),
+            fallback: 0
+          },
+          {
+            name: 'hasDiscount',
+            call: () => contract.hasDiscount(walletAddress),
+            setter: (value: any) => setHasDiscount(Boolean(value)),
+            fallback: false
+          },
+          {
+            name: 'rewardPool',
+            call: () => contract.getRewardPool(),
+            setter: (value: any) => setRewardPool(ethers.formatEther(value)),
+            fallback: '0'
+          }
+        ];
+
+        for (const { name, call, setter, fallback } of contractCalls) {
+          try {
+            const result = await retryWithBackoff(call, 2, 500);
+            setter(result);
+            console.log(`${name}:`, result);
+          } catch (error: any) {
+            console.error(`Error fetching ${name}:`, error);
+            
+            // Check if it's a contract-related error
+            if (error.code === 'CALL_EXCEPTION' || error.code === 'BAD_DATA') {
+              console.warn(`Contract call failed for ${name}, using fallback value`);
+              setter(fallback);
+              setNetworkError(true);
+            }
+          }
         }
         
         console.log('State fetched successfully');
       } catch (error) {
         console.error('Error fetching state:', error);
+        setNetworkError(true);
       }
     }
   }, [contract, walletAddress, provider]);
@@ -214,22 +254,8 @@ export function useBlockchainGame() {
     const rewardAmount = ethers.formatEther(monReward);
     const explorerUrl = `${MONAD_TESTNET.blockExplorers.default.url}/tx/${txHash}`;
     
-    let message = `🎰 Spin Result: ${fruitEmojis}\n`;
-    
-    if (nftMinted) {
-      message += `🎉 LEGENDARY NFT WON! 🍒🍒🍒\n`;
-    } else if (monReward > 0) {
-      message += `💰 Won: ${rewardAmount} MON\n`;
-    } else if (extraSpins > 0) {
-      message += `🎁 Won: ${extraSpins} Free Spins\n`;
-    } else {
-      message += `😔 No reward this time\n`;
-    }
-    
-    message += `🔗 View on Explorer: ${explorerUrl}`;
-    
     // Create custom toast with detailed info
-    toast.success(
+    const toastContent = (
       <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
         <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
           🎰 Spin Result: {fruitEmojis}
@@ -264,17 +290,23 @@ export function useBlockchainGame() {
             🔗 View on Monad Explorer
           </a>
         </div>
-      </div>,
-      {
-        autoClose: 8000,
-        hideProgressBar: false,
-      }
+      </div>
     );
+    
+    toast.success(toastContent, {
+      autoClose: 8000,
+      hideProgressBar: false,
+    });
   };
 
-  // Spin function with optimistic UI and detailed result popup
+  // Spin function with improved error handling
   const spin = useCallback(async () => {
     if (!contract || !signer || isSpinning) return;
+    
+    if (networkError) {
+      toast.error('❌ Network connection issues. Please try again later.');
+      return;
+    }
     
     setIsSpinning(true);
     
@@ -289,15 +321,24 @@ export function useBlockchainGame() {
       
       console.log('Spinning with cost:', ethers.formatEther(cost), 'MON');
       
-      // Call spin on contract
-      const tx = await contract.spin({ value: cost });
+      // Call spin on contract with retry
+      const tx = await retryWithBackoff(async () => {
+        return await contract.spin({ value: cost });
+      });
+      
       console.log('Transaction sent:', tx.hash);
       
       // Show pending toast
       toast.info('🎰 Spinning... Transaction pending', { autoClose: 3000 });
       
-      // Wait for confirmation
-      const receipt = await tx.wait();
+      // Wait for confirmation with timeout
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Transaction timeout')), 60000)
+        )
+      ]);
+      
       console.log('Transaction confirmed:', receipt.hash);
       
       // Parse SpinResult event
@@ -340,13 +381,20 @@ export function useBlockchainGame() {
         toast.error('❌ Insufficient MON balance for spin');
       } else if (error.code === 'USER_REJECTED') {
         toast.error('❌ Transaction cancelled by user');
+      } else if (error.code === 'CALL_EXCEPTION') {
+        toast.error('❌ Contract call failed. The contract may not be deployed or network issues.');
+      } else if (error.message?.includes('timeout')) {
+        toast.error('❌ Transaction timeout. Please try again.');
+      } else if (error.code === 'NETWORK_ERROR' || error.code === 'SERVER_ERROR') {
+        toast.error('❌ Network error. Please check your connection and try again.');
+        setNetworkError(true);
       } else {
         toast.error('❌ Spin failed. Please try again.');
       }
     } finally {
       setIsSpinning(false);
     }
-  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, fetchState]);
+  }, [contract, signer, freeSpins, hasDiscount, discountedSpins, isSpinning, networkError, fetchState]);
 
   const getSpinCost = useCallback(() => {
     if (freeSpins > 0) return 'Free';
@@ -364,6 +412,7 @@ export function useBlockchainGame() {
     hasDiscount,
     rewardPool,
     isSpinning,
+    networkError,
     spin,
     getSpinCost,
     refreshState: fetchState,
